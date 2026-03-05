@@ -6,8 +6,11 @@
   "bin": {
     "ctxflow": "./dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-        "build": "tsc",
+    "build": "tsc",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "test": "vitest run",

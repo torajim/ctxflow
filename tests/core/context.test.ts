@@ -37,7 +37,7 @@ describe("generateContext", () => {
   });
 
   it("shows other active workers in text format", () => {
-    const task = createTask("JWT 인증 구현", "stefano");
+    const task = createTask("Implement JWT auth", "stefano");
 
     const w1 = createWorker("stefano", "mac1", task.id);
     w1.status = "working";
@@ -51,16 +51,16 @@ describe("generateContext", () => {
     saveWorker(w2);
 
     const result = generateContext("stefano", "text");
-    expect(result).toContain("[ctxflow] 협업 상태:");
+    expect(result).toContain("[ctxflow] collaboration status:");
     expect(result).toContain("jimin");
-    expect(result).toContain("JWT 인증 구현");
+    expect(result).toContain("Implement JWT auth");
     expect(result).toContain("src/users.ts");
     expect(result).toContain(".ctxflow/context/stefano.md");
     expect(result).not.toContain("stefano:");
   });
 
   it("wraps in system-reminder for hook format", () => {
-    const task = createTask("작업", "a");
+    const task = createTask("some task", "a");
 
     const w1 = createWorker("stefano", "mac1", task.id);
     w1.status = "working";
@@ -77,7 +77,7 @@ describe("generateContext", () => {
   });
 
   it("includes context file content in summary", () => {
-    const task = createTask("API 구현", "jimin");
+    const task = createTask("Build API", "jimin");
 
     const w1 = createWorker("stefano", "mac1", task.id);
     w1.status = "working";
@@ -87,10 +87,9 @@ describe("generateContext", () => {
     w2.status = "working";
     saveWorker(w2);
 
-    // Write jimin's context file
     fs.writeFileSync(
       contextFile("jimin"),
-      "Drizzle ORM 사용, REST 패턴으로 구현 중\n상세한 두 번째 줄\n세 번째 줄",
+      "Using Drizzle ORM, REST pattern\nSecond line detail\nThird line",
     );
 
     const result = generateContext("stefano", "text");
@@ -98,7 +97,7 @@ describe("generateContext", () => {
   });
 
   it("shows conflict warning when files overlap", () => {
-    const task = createTask("공유 작업", "stefano");
+    const task = createTask("shared work", "stefano");
 
     const w1 = createWorker("stefano", "mac1", task.id);
     w1.status = "working";
@@ -115,14 +114,13 @@ describe("generateContext", () => {
     saveWorker(w2);
 
     const result = generateContext("stefano", "text");
-    expect(result).toContain("충돌");
+    expect(result).toContain("conflict");
     expect(result).toContain("src/types.ts");
   });
 
   it("handles 5+ workers with conflict filtering", () => {
-    const task = createTask("대규모 작업", "lead");
+    const task = createTask("large project", "lead");
 
-    // Create "me"
     const me = createWorker("me", "mac0", task.id);
     me.status = "working";
     me.files_touched = [
@@ -130,12 +128,10 @@ describe("generateContext", () => {
     ];
     saveWorker(me);
 
-    // Create 6 other workers (to trigger 5+ mode)
     for (let i = 1; i <= 6; i++) {
       const w = createWorker(`worker${i}`, `mac${i}`, task.id);
       w.status = "working";
       if (i === 1) {
-        // worker1 conflicts with "me" on src/shared.ts
         w.files_touched = [
           { path: "src/shared.ts", summary: "+conflict", updated_at: new Date().toISOString() },
         ];
@@ -148,16 +144,13 @@ describe("generateContext", () => {
     }
 
     const result = generateContext("me", "text");
-    expect(result).toContain("[ctxflow] 협업 상태:");
-    // worker1 should be shown in detail (conflict)
+    expect(result).toContain("[ctxflow] collaboration status:");
     expect(result).toContain("worker1");
-    // Others should be summarized
-    expect(result).toContain("외");
-    expect(result).toContain("작업 중");
+    expect(result).toContain("more working");
   });
 
   it("includes LLM instruction for context file update", () => {
-    const task = createTask("작업", "a");
+    const task = createTask("some task", "a");
     const w1 = createWorker("stefano", "mac1", task.id);
     w1.status = "working";
     saveWorker(w1);
@@ -166,7 +159,7 @@ describe("generateContext", () => {
     saveWorker(w2);
 
     const result = generateContext("stefano", "text");
-    expect(result).toContain("접근 방식 변경 시");
+    expect(result).toContain("changing your approach");
     expect(result).toContain(".ctxflow/context/stefano.md");
   });
 });

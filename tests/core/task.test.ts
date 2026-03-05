@@ -51,18 +51,18 @@ describe("Identity (me) - from git config", () => {
 
 describe("Task CRUD", () => {
   it("createTask creates a task file", () => {
-    const task = createTask("JWT 인증 구현", "stefano");
+    const task = createTask("Implement JWT auth", "stefano");
     expect(task.id).toHaveLength(10);
-    expect(task.description).toBe("JWT 인증 구현");
+    expect(task.description).toBe("Implement JWT auth");
     expect(task.created_by).toBe("stefano");
     expect(task.status).toBe("active");
   });
 
   it("getTask retrieves a created task", () => {
-    const task = createTask("테스트 작업", "stefano");
+    const task = createTask("test task", "stefano");
     const retrieved = getTask(task.id);
     expect(retrieved).not.toBeNull();
-    expect(retrieved!.description).toBe("테스트 작업");
+    expect(retrieved!.description).toBe("test task");
     expect(retrieved!.id).toBe(task.id);
   });
 
@@ -71,9 +71,9 @@ describe("Task CRUD", () => {
   });
 
   it("listTasks returns all tasks", () => {
-    createTask("작업 1", "a");
-    createTask("작업 2", "b");
-    createTask("작업 3", "c");
+    createTask("task 1", "a");
+    createTask("task 2", "b");
+    createTask("task 3", "c");
     const tasks = listTasks();
     expect(tasks).toHaveLength(3);
   });
@@ -83,7 +83,7 @@ describe("Task CRUD", () => {
   });
 
   it("updateTaskStatus changes status", () => {
-    const task = createTask("완료할 작업", "stefano");
+    const task = createTask("task to complete", "stefano");
     expect(task.status).toBe("active");
 
     const updated = updateTaskStatus(task.id, "done");

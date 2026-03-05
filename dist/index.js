@@ -21,19 +21,19 @@ program
     ensureDirs();
     const tasks = listTasks();
     const workers = listWorkers();
-    console.log(chalk.bold("\nctxflow - 협업 상태\n"));
+    console.log(chalk.bold("\nctxflow - collaboration status\n"));
     const activeTasks = tasks.filter((t) => t.status === "active");
     if (activeTasks.length === 0) {
-        console.log(chalk.gray("  활성 작업이 없습니다."));
-        console.log(chalk.gray('  "ctxflow start <설명>" 으로 새 작업을 시작하세요.\n'));
+        console.log(chalk.gray("  No active tasks."));
+        console.log(chalk.gray('  Run "ctxflow start <description>" to begin.\n'));
         return;
     }
-    console.log(chalk.bold("작업 목록:"));
+    console.log(chalk.bold("Tasks:"));
     for (const task of activeTasks) {
         const participants = getTaskParticipants(task.id);
         console.log(`  ${task.description} (${chalk.dim(task.id)})`);
         if (participants.length === 0) {
-            console.log(chalk.gray("    참여자 없음"));
+            console.log(chalk.gray("    no participants"));
         }
         else {
             for (const w of participants) {
@@ -52,41 +52,47 @@ program
 // ctxflow start <description>
 program
     .command("start")
-    .description("새 작업을 시작합니다")
-    .argument("<description...>", "작업 설명")
+    .description("Start a new task")
+    .argument("<description...>", "Task description")
     .action(async (descParts) => {
     ensureDirs();
     const description = descParts.join(" ");
     // Ensure git repo with remote
     if (!(await isGitRepo())) {
-        const remoteUrl = await promptInput("Git 저장소가 아닙니다. remote repository URL을 입력하세요: ");
+        const remoteUrl = await promptInput("Not a git repository. Enter remote repository URL: ");
         if (!remoteUrl.trim()) {
-            console.error(chalk.red("ctxflow는 git remote가 필요합니다."));
+            console.error(chalk.red("ctxflow requires a git remote."));
             process.exit(1);
         }
         await initGitWithRemote(remoteUrl.trim());
-        console.log(chalk.dim(`git init + remote 설정 완료: ${remoteUrl.trim()}`));
+        console.log(chalk.dim(`git init + remote configured: ${remoteUrl.trim()}`));
     }
     else if (!(await hasGitRemote())) {
-        const remoteUrl = await promptInput("Git remote가 설정되지 않았습니다. remote repository URL을 입력하세요: ");
+        const remoteUrl = await promptInput("No git remote configured. Enter remote repository URL: ");
         if (!remoteUrl.trim()) {
-            console.error(chalk.red("ctxflow는 git remote가 필요합니다."));
+            console.error(chalk.red("ctxflow requires a git remote."));
             process.exit(1);
         }
         await initGitWithRemote(remoteUrl.trim());
-        console.log(chalk.dim(`remote 설정 완료: ${remoteUrl.trim()}`));
+        console.log(chalk.dim(`Remote configured: ${remoteUrl.trim()}`));
     }
     // Get identity from git config
-    const me = getMe();
+    let me = getMe();
     if (!me) {
-        console.error(chalk.red("git user.name이 설정되지 않았습니다.\n" +
-            '  git config user.name "이름" 으로 설정하세요.'));
-        process.exit(1);
+        const name = await promptInput("git user.name is not set. Enter your name: ");
+        if (!name.trim()) {
+            console.error(chalk.red("A name is required to identify your work."));
+            process.exit(1);
+        }
+        const { execSync } = await import("node:child_process");
+        execSync(`git config user.name "${name.trim()}"`, { stdio: "pipe" });
+        me = name.trim();
+        console.log(chalk.dim(`git user.name set to "${me}"`));
     }
     // Check if already participating in a task
     const existingWorker = getWorker(me);
     if (existingWorker && existingWorker.task_id) {
-        console.error(chalk.red(`이미 작업에 참여 중입니다: ${existingWorker.task_id}\n먼저 "ctxflow stop"으로 현재 작업을 중단하세요.`));
+        console.error(chalk.red(`Already participating in task: ${existingWorker.task_id}\nRun "ctxflow stop" first.`));
         process.exit(1);
     }
     // Create task
@@ -106,24 +112,24 @@ program
     installHooks();
     // Start daemon if not running
     startDaemonIfNeeded();
-    console.log(chalk.green(`\n작업 시작: ${description}`));
-    console.log(chalk.dim(`작업 ID: ${task.id}`));
-    console.log(chalk.dim(`참여자: ${me}\n`));
+    console.log(chalk.green(`\nTask started: ${description}`));
+    console.log(chalk.dim(`Task ID: ${task.id}`));
+    console.log(chalk.dim(`Worker: ${me}\n`));
 });
 // ctxflow stop
 program
     .command("stop")
-    .description("현재 작업을 중단합니다")
+    .description("Stop current task")
     .action(async () => {
     ensureDirs();
     const me = getMe();
     if (!me) {
-        console.error(chalk.red("먼저 ctxflow start로 작업을 시작하세요."));
+        console.error(chalk.red("Run \"ctxflow start\" first."));
         process.exit(1);
     }
     const worker = getWorker(me);
     if (!worker) {
-        console.error(chalk.red("활성 워커가 없습니다."));
+        console.error(chalk.red("No active worker found."));
         process.exit(1);
     }
     worker.status = "disconnected";
@@ -131,13 +137,13 @@ program
     saveWorker(worker);
     // Stop daemon if no other local workers active
     stopDaemonIfIdle();
-    console.log(chalk.yellow("\n작업을 중단했습니다.\n"));
+    console.log(chalk.yellow("\nTask stopped.\n"));
 });
 // ctxflow context
 program
     .command("context")
-    .description("컨텍스트를 생성합니다")
-    .option("--format <format>", "출력 형식 (hook|text)", "text")
+    .description("Generate collaboration context")
+    .option("--format <format>", "Output format (hook|text)", "text")
     .action(async (opts) => {
     ensureDirs();
     const me = getMe();
@@ -147,8 +153,8 @@ program
 // ctxflow on-edit
 program
     .command("on-edit")
-    .description("파일 편집 이벤트를 처리합니다")
-    .option("--file <filepath>", "편집된 파일 경로")
+    .description("Handle file edit event")
+    .option("--file <filepath>", "Edited file path")
     .action(async (opts) => {
     ensureDirs();
     let filePath = opts.file;
@@ -158,7 +164,6 @@ program
             const input = await readStdin();
             if (input) {
                 const parsed = JSON.parse(input);
-                // PostToolUse provides tool_input with file_path or file
                 filePath =
                     parsed?.tool_input?.file_path ??
                         parsed?.tool_input?.file ??
@@ -180,7 +185,7 @@ program
 // ctxflow on-session-end
 program
     .command("on-session-end")
-    .description("세션 종료를 처리합니다")
+    .description("Handle session end")
     .action(async () => {
     ensureDirs();
     const me = getMe();
@@ -204,14 +209,14 @@ program.parse();
 function formatTimeAgo(date) {
     const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
     if (seconds < 10)
-        return "방금 전";
+        return "just now";
     if (seconds < 60)
-        return `${seconds}초 전`;
+        return `${seconds}s ago`;
     const minutes = Math.floor(seconds / 60);
     if (minutes < 60)
-        return `${minutes}분 전`;
+        return `${minutes}m ago`;
     const hours = Math.floor(minutes / 60);
-    return `${hours}시간 전`;
+    return `${hours}h ago`;
 }
 function promptInput(prompt) {
     const rl = readline.createInterface({
@@ -235,7 +240,6 @@ function readStdin() {
         process.stdin.on("end", () => {
             resolve(data);
         });
-        // Timeout after 1 second if no data
         setTimeout(() => resolve(data), 1000);
     });
 }
@@ -244,8 +248,8 @@ function startDaemonIfNeeded() {
     if (fs.existsSync(pidFile)) {
         const pid = parseInt(fs.readFileSync(pidFile, "utf-8").trim(), 10);
         try {
-            process.kill(pid, 0); // Check if process exists
-            return; // Daemon already running
+            process.kill(pid, 0);
+            return;
         }
         catch {
             // Process doesn't exist, clean up stale pid file
@@ -264,7 +268,6 @@ function stopDaemonIfIdle() {
     const pidFile = daemonPidFile();
     if (!fs.existsSync(pidFile))
         return;
-    // Check if any other workers are active
     const workers = listWorkers();
     const activeWorkers = workers.filter((w) => w.status === "working" && w.task_id);
     if (activeWorkers.length > 0)

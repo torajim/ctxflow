@@ -18,9 +18,9 @@ function formatFileChanges(worker) {
         return "";
     const items = worker.files_touched
         .slice(-5)
-        .map((f) => `${f.path} (+${f.summary})`)
+        .map((f) => `${f.path} (${f.summary})`)
         .join(", ");
-    return `  최근: ${items}`;
+    return `  recent: ${items}`;
 }
 function isConflicting(workerName, conflicts) {
     return conflicts.some((c) => c.workers.includes(workerName));
@@ -41,13 +41,13 @@ function formatWorkerDetailed(worker, taskDesc, contextContent, workerConflicts)
     const lines = [];
     lines.push(`- ${worker.name}: "${desc}"`);
     if (contextContent) {
-        lines.push(`  접근 방식:\n${contextContent.split("\n").map((l) => `    ${l}`).join("\n")}`);
+        lines.push(`  approach:\n${contextContent.split("\n").map((l) => `    ${l}`).join("\n")}`);
     }
     const files = formatFileChanges(worker);
     if (files)
         lines.push(files);
     for (const c of workerConflicts) {
-        lines.push(`  ⚠ 충돌: ${c.file} (${c.workers.join(", ")})`);
+        lines.push(`  ⚠ conflict: ${c.file} (${c.workers.join(", ")})`);
     }
     return lines.join("\n");
 }
@@ -60,9 +60,8 @@ export function generateContext(myName, format) {
     const hasConflicts = conflicts.length > 0;
     const manyWorkers = otherWorkers.length >= 5;
     const sections = [];
-    sections.push("[ctxflow] 협업 상태:");
+    sections.push("[ctxflow] collaboration status:");
     if (manyWorkers && hasConflicts) {
-        // Show detailed only for conflicting workers, summarize rest
         const conflictingNames = new Set(conflicts.flatMap((c) => c.workers));
         const conflictingWorkers = otherWorkers.filter((w) => conflictingNames.has(w.name));
         const otherCount = otherWorkers.length - conflictingWorkers.length;
@@ -73,7 +72,7 @@ export function generateContext(myName, format) {
             sections.push(formatWorkerDetailed(worker, task?.description ?? null, ctx, workerConflicts));
         }
         if (otherCount > 0) {
-            sections.push(`외 ${otherCount}명 작업 중 (충돌 없음)`);
+            sections.push(`and ${otherCount} more working (no conflicts)`);
         }
     }
     else {
@@ -90,7 +89,7 @@ export function generateContext(myName, format) {
         }
     }
     sections.push("");
-    sections.push(`[ctxflow] 주요 아키텍처 결정이나 접근 방식 변경 시,\n.ctxflow/context/${myName}.md 파일에 현재 접근 방식을 간단히 기록해주세요.`);
+    sections.push(`[ctxflow] When making key architectural decisions or changing your approach,\nplease update .ctxflow/context/${myName}.md with a brief summary.`);
     const body = sections.join("\n");
     if (format === "hook") {
         return `<system-reminder>\n${body}\n</system-reminder>`;

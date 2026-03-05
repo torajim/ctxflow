@@ -51,15 +51,22 @@
 ### 설치
 
 ```bash
-# GitHub에서 직접 설치
-npm install -g git+https://github.com/torajim/ctxflow.git
-
-# 또는 클론 후 로컬 설치
 git clone https://github.com/torajim/ctxflow.git
 cd ctxflow
 npm install
-npm run build
 npm link
+```
+
+설치 확인:
+
+```bash
+ctxflow --version   # 0.1.0
+```
+
+### 삭제
+
+```bash
+npm unlink -g ctxflow
 ```
 
 ### 빠른 시작

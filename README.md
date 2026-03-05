@@ -51,13 +51,11 @@ Each worker's LLM gets a `<system-reminder>` injected before every tool use, con
 ### Installation
 
 ```bash
-npm install -g ctxflow
-```
+# Install directly from GitHub
+npm install -g git+https://github.com/torajim/ctxflow.git
 
-Or install from source:
-
-```bash
-git clone https://github.com/your-org/ctxflow.git
+# Or clone and install locally
+git clone https://github.com/torajim/ctxflow.git
 cd ctxflow
 npm install
 npm run build

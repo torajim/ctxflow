@@ -172,45 +172,53 @@ ctxflow stop --session <session-id>
 
 ## 데모 실행 가이드
 
-아래는 로컬에서 두 터미널로 협업 세션을 시뮬레이션하는 단계별 예시입니다.
+로컬에서 두 터미널로 바로 따라할 수 있는 완전한 데모입니다. 외부 서버 없이 로컬 bare git repo를 remote로 사용합니다.
 
 ### 준비
 
 ```bash
-# 공용 터미널: 테스트 프로젝트 생성
-mkdir /tmp/demo-project && cd /tmp/demo-project
-git init && git remote add origin git@github.com:youruser/demo-project.git
+# bare repo 생성 (remote 역할)
+git init --bare /tmp/ctxflow-demo-remote.git
+
+# 프로젝트 생성
+mkdir /tmp/ctxflow-demo && cd /tmp/ctxflow-demo
+git init
+git remote add origin /tmp/ctxflow-demo-remote.git
+echo '# ctxflow demo' > README.md
+git add README.md && git commit -m "init"
+git push -u origin main
 ```
 
-### 터미널 1 — Worker A (Stefano)
+### 터미널 1 — Worker A
 
 ```bash
-cd /tmp/demo-project
-ctxflow start "사용자 인증 구현"
+cd /tmp/ctxflow-demo
+ctxflow start "Todo 유틸리티 라이브러리 만들기"
 ```
 
-```
-Task started: 사용자 인증 구현
-Task ID: a1b2c3d4e5
-Session: xK9mQ2pL
-Worker: stefano
-
-To enable session tracking in Claude Code, run:
-  export CTXFLOW_SESSION=xK9mQ2pL
-Then start Claude Code:
-  claude
-```
+ctxflow가 세션 ID를 출력합니다. 복사한 뒤 실행합니다:
 
 ```bash
-export CTXFLOW_SESSION=xK9mQ2pL
+export CTXFLOW_SESSION=<출력된-session-id>
 claude
-# Claude가 작업 중... src/auth/login.ts, src/auth/middleware.ts 수정
 ```
 
-### 터미널 2 — Worker B (Jimin)
+Claude에게 다음 프롬프트를 입력합니다:
+
+```
+간단한 Todo 유틸리티를 TypeScript로 만들어줘 (의존성 없이 순수 .ts 파일):
+1. src/types.ts — Todo 인터페이스 export (필드: id (string), title (string), completed (boolean))
+2. src/store.ts — TodoStore 클래스 export. 메서드: add(title: string): Todo, list(): Todo[], toggle(id: string): void. 배열을 인메모리 저장소로 사용하고 ID는 Math.random().toString(36).slice(2)로 생성.
+```
+
+Claude가 두 파일을 모두 생성할 때까지 기다립니다.
+
+### 터미널 2 — Worker B
+
+**새 터미널**을 엽니다:
 
 ```bash
-cd /tmp/demo-project
+cd /tmp/ctxflow-demo
 ctxflow
 ```
 
@@ -218,54 +226,50 @@ ctxflow
 ctxflow - collaboration status
 
 Active tasks:
-  [1] 사용자 인증 구현 (a1b2c3d4e5)
-      stefano (working, 방금 전)
+  [1] Todo 유틸리티 라이브러리 만들기 (a1b2c3)
+      workerA (working, 방금 전)
   [N] Create a new task
 
 Select a task to join, or N to create new: 1
 ```
 
-```
-Joined task: 사용자 인증 구현
-Task ID: a1b2c3d4e5
-Session: pR7nW4kJ
-Worker: jimin
-
-To enable session tracking in Claude Code, run:
-  export CTXFLOW_SESSION=pR7nW4kJ
-Then start Claude Code:
-  claude
-```
+세션 ID를 복사하고 실행합니다:
 
 ```bash
-export CTXFLOW_SESSION=pR7nW4kJ
+export CTXFLOW_SESSION=<출력된-session-id>
 claude
-# Jimin의 Claude가 자동으로 Stefano의 컨텍스트를 확인:
 ```
 
+Claude에게 다음 프롬프트를 입력합니다:
+
 ```
-[ctxflow] collaboration status:
-- stefano: "사용자 인증 구현" | JWT 기반 인증, bcrypt 사용
-  recent: src/auth/login.ts (+로그인 엔드포인트), src/auth/middleware.ts (+JWT 검증)
-
-[ctxflow] When making key architectural decisions or changing your approach,
-please update .ctxflow/context/pR7nW4kJ.md with a brief summary.
+Todo 포맷터를 TypeScript로 만들어줘:
+1. src/types.ts — Todo 인터페이스가 있는지 확인 (id, title, completed 필드)
+2. src/formatter.ts — formatTodo(todo: Todo): string ("[ ] 제목" 또는 "[x] 제목" 반환)과 formatList(todos: Todo[]): string (모든 Todo를 번호와 함께 포맷) 함수 export.
 ```
 
-### 충돌 감지
+### 확인할 수 있는 것
 
-Jimin의 Claude가 Stefano가 이미 수정한 파일을 편집하면:
+**컨텍스트 공유** — Worker B의 Claude가 코드를 작성하기 전, 시스템 리마인더를 받습니다:
 
 ```
 [ctxflow] collaboration status:
-- stefano: "사용자 인증 구현" | JWT 기반 인증
-  recent: src/auth/login.ts (+로그인 엔드포인트), src/types/index.ts (+AuthUser 타입)
-
-  ⚠ conflict: src/types/index.ts (stefano, jimin)
+- workerA: "Todo 유틸리티 라이브러리 만들기"
+  recent: src/types.ts (+Todo interface), src/store.ts (+TodoStore class)
 
 [ctxflow] When making key architectural decisions or changing your approach,
-please update .ctxflow/context/pR7nW4kJ.md with a brief summary.
+please update .ctxflow/context/<session-id>.md with a brief summary.
 ```
+
+Worker B의 Claude는 `src/types.ts`에 이미 `Todo` 인터페이스가 있다는 것을 알고, 중복 정의 없이 기존 것을 재사용할 수 있습니다.
+
+**충돌 감지** — 두 워커가 `src/types.ts`를 수정합니다. ctxflow가 이를 감지하고 경고합니다:
+
+```
+⚠ conflict: src/types.ts (workerA, workerB)
+```
+
+이것이 핵심 가치입니다: ctxflow 없이는 Worker B의 Claude가 인터페이스를 모르고 덮어쓰거나 중복 정의할 수 있습니다. ctxflow가 있으면 겹침을 감지하고 조율합니다.
 
 ### 상태 확인
 
@@ -278,24 +282,21 @@ ctxflow status
 
   Daemon: running
   Sessions: 2
-    xK9mQ2pL - working - "사용자 인증 구현"
-    pR7nW4kJ - working - "사용자 인증 구현"
+    <session-A> - working - "Todo 유틸리티 라이브러리 만들기"
+    <session-B> - working - "Todo 유틸리티 라이브러리 만들기"
 ```
 
 ### 정리
 
 ```bash
-# 터미널 1
-ctxflow stop --session xK9mQ2pL
-# Session xK9mQ2pL stopped.
-
-# 터미널 2
-ctxflow stop --session pR7nW4kJ
-# Session pR7nW4kJ stopped.
+# 각 터미널에서 세션 종료
+ctxflow stop
 
 # 잔여 데이터 정리
 ctxflow cleanup
-# Cleaned up 2 stale entries.
+
+# 데모 파일 삭제
+rm -rf /tmp/ctxflow-demo /tmp/ctxflow-demo-remote.git
 ```
 
 ## 프로젝트 구조

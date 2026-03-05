@@ -172,45 +172,53 @@ ctxflow stop --session <session-id>
 
 ## Demo Walkthrough
 
-Below is a step-by-step example of running ctxflow locally with two terminals to simulate a collaborative session.
+A fully reproducible demo you can run locally with two terminals. No external server needed — we use a local bare git repo as the remote.
 
 ### Setup
 
 ```bash
-# Terminal shared: create a test project
-mkdir /tmp/demo-project && cd /tmp/demo-project
-git init && git remote add origin git@github.com:youruser/demo-project.git
+# Create a bare repo to act as the remote
+git init --bare /tmp/ctxflow-demo-remote.git
+
+# Create the project
+mkdir /tmp/ctxflow-demo && cd /tmp/ctxflow-demo
+git init
+git remote add origin /tmp/ctxflow-demo-remote.git
+echo '# ctxflow demo' > README.md
+git add README.md && git commit -m "init"
+git push -u origin main
 ```
 
-### Terminal 1 — Worker A (Stefano)
+### Terminal 1 — Worker A
 
 ```bash
-cd /tmp/demo-project
-ctxflow start "Build user authentication"
+cd /tmp/ctxflow-demo
+ctxflow start "Build a shared Todo utility library"
 ```
 
-```
-Task started: Build user authentication
-Task ID: a1b2c3d4e5
-Session: xK9mQ2pL
-Worker: stefano
-
-To enable session tracking in Claude Code, run:
-  export CTXFLOW_SESSION=xK9mQ2pL
-Then start Claude Code:
-  claude
-```
+ctxflow prints a session ID. Copy it and run:
 
 ```bash
-export CTXFLOW_SESSION=xK9mQ2pL
+export CTXFLOW_SESSION=<session-id-from-output>
 claude
-# Claude is now working... edits src/auth/login.ts, src/auth/middleware.ts
 ```
 
-### Terminal 2 — Worker B (Jimin)
+Give Claude this exact prompt:
+
+```
+Create a simple Todo utility in TypeScript (plain .ts files, no dependencies):
+1. src/types.ts — export a Todo interface with fields: id (string), title (string), completed (boolean)
+2. src/store.ts — export a TodoStore class with methods: add(title: string): Todo, list(): Todo[], toggle(id: string): void. Use an array as in-memory storage and Math.random().toString(36).slice(2) for IDs.
+```
+
+Wait for Claude to finish creating both files.
+
+### Terminal 2 — Worker B
+
+Open a **new terminal**:
 
 ```bash
-cd /tmp/demo-project
+cd /tmp/ctxflow-demo
 ctxflow
 ```
 
@@ -218,54 +226,50 @@ ctxflow
 ctxflow - collaboration status
 
 Active tasks:
-  [1] Build user authentication (a1b2c3d4e5)
-      stefano (working, just now)
+  [1] Build a shared Todo utility library (a1b2c3)
+      workerA (working, just now)
   [N] Create a new task
 
 Select a task to join, or N to create new: 1
 ```
 
-```
-Joined task: Build user authentication
-Task ID: a1b2c3d4e5
-Session: pR7nW4kJ
-Worker: jimin
-
-To enable session tracking in Claude Code, run:
-  export CTXFLOW_SESSION=pR7nW4kJ
-Then start Claude Code:
-  claude
-```
+Copy the session ID and run:
 
 ```bash
-export CTXFLOW_SESSION=pR7nW4kJ
+export CTXFLOW_SESSION=<session-id-from-output>
 claude
-# Jimin's Claude now automatically sees Stefano's context:
 ```
 
+Now give Claude this prompt:
+
 ```
-[ctxflow] collaboration status:
-- stefano: "Build user authentication" | JWT-based auth with bcrypt
-  recent: src/auth/login.ts (+login endpoint), src/auth/middleware.ts (+JWT verify)
-
-[ctxflow] When making key architectural decisions or changing your approach,
-please update .ctxflow/context/pR7nW4kJ.md with a brief summary.
+Create a Todo formatter in TypeScript:
+1. src/types.ts — ensure a Todo interface exists with id, title, completed fields
+2. src/formatter.ts — export formatTodo(todo: Todo): string that returns "[ ] title" or "[x] title", and formatList(todos: Todo[]): string that formats all todos with line numbering.
 ```
 
-### Conflict detected
+### What you'll see
 
-When Jimin's Claude edits a file Stefano already touched:
+**Context sharing** — Before Worker B's Claude writes any code, it receives a system reminder:
 
 ```
 [ctxflow] collaboration status:
-- stefano: "Build user authentication" | JWT-based auth
-  recent: src/auth/login.ts (+login endpoint), src/types/index.ts (+AuthUser type)
-
-  ⚠ conflict: src/types/index.ts (stefano, jimin)
+- workerA: "Build a shared Todo utility library"
+  recent: src/types.ts (+Todo interface), src/store.ts (+TodoStore class)
 
 [ctxflow] When making key architectural decisions or changing your approach,
-please update .ctxflow/context/pR7nW4kJ.md with a brief summary.
+please update .ctxflow/context/<session-id>.md with a brief summary.
 ```
+
+Worker B's Claude knows that `src/types.ts` already exists with a `Todo` interface, and can reuse it instead of redefining it.
+
+**Conflict detection** — Both workers touch `src/types.ts`. ctxflow detects this and warns:
+
+```
+⚠ conflict: src/types.ts (workerA, workerB)
+```
+
+This is the core value: without ctxflow, Worker B's Claude would blindly overwrite or duplicate the interface. With ctxflow, it sees the overlap and coordinates.
 
 ### Check status
 
@@ -278,24 +282,21 @@ ctxflow status
 
   Daemon: running
   Sessions: 2
-    xK9mQ2pL - working - "Build user authentication"
-    pR7nW4kJ - working - "Build user authentication"
+    <session-A> - working - "Build a shared Todo utility library"
+    <session-B> - working - "Build a shared Todo utility library"
 ```
 
-### Finish up
+### Cleanup
 
 ```bash
-# Terminal 1
-ctxflow stop --session xK9mQ2pL
-# Session xK9mQ2pL stopped.
+# Stop sessions (run in each terminal)
+ctxflow stop
 
-# Terminal 2
-ctxflow stop --session pR7nW4kJ
-# Session pR7nW4kJ stopped.
-
-# Clean up stale data
+# Remove stale data
 ctxflow cleanup
-# Cleaned up 2 stale entries.
+
+# Delete demo files
+rm -rf /tmp/ctxflow-demo /tmp/ctxflow-demo-remote.git
 ```
 
 ## Project Structure

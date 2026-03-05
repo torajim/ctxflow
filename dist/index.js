@@ -5,7 +5,8 @@ import fs from "node:fs";
 import readline from "node:readline";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { getMe, setMe, createTask, listTasks, getWorker, saveWorker, createWorker, listWorkers, getTaskParticipants, addFileChange, } from "./core/task.js";
+import { getMe, createTask, listTasks, getWorker, saveWorker, createWorker, listWorkers, getTaskParticipants, addFileChange, } from "./core/task.js";
+import { hasGitRemote, isGitRepo, initGitWithRemote } from "./core/sync.js";
 import { generateContext } from "./core/context.js";
 import { ensureDirs, daemonPidFile, contextFile, } from "./core/paths.js";
 import { installHooks, ensureGitignore } from "./hooks.js";
@@ -56,16 +57,31 @@ program
     .action(async (descParts) => {
     ensureDirs();
     const description = descParts.join(" ");
-    // Get or prompt for identity
-    let me = getMe();
-    if (!me) {
-        const name = await promptInput("이름을 입력하세요: ");
-        if (!name.trim()) {
-            console.error(chalk.red("이름이 필요합니다."));
+    // Ensure git repo with remote
+    if (!(await isGitRepo())) {
+        const remoteUrl = await promptInput("Git 저장소가 아닙니다. remote repository URL을 입력하세요: ");
+        if (!remoteUrl.trim()) {
+            console.error(chalk.red("ctxflow는 git remote가 필요합니다."));
             process.exit(1);
         }
-        setMe(name.trim());
-        me = getMe();
+        await initGitWithRemote(remoteUrl.trim());
+        console.log(chalk.dim(`git init + remote 설정 완료: ${remoteUrl.trim()}`));
+    }
+    else if (!(await hasGitRemote())) {
+        const remoteUrl = await promptInput("Git remote가 설정되지 않았습니다. remote repository URL을 입력하세요: ");
+        if (!remoteUrl.trim()) {
+            console.error(chalk.red("ctxflow는 git remote가 필요합니다."));
+            process.exit(1);
+        }
+        await initGitWithRemote(remoteUrl.trim());
+        console.log(chalk.dim(`remote 설정 완료: ${remoteUrl.trim()}`));
+    }
+    // Get identity from git config
+    const me = getMe();
+    if (!me) {
+        console.error(chalk.red("git user.name이 설정되지 않았습니다.\n" +
+            '  git config user.name "이름" 으로 설정하세요.'));
+        process.exit(1);
     }
     // Check if already participating in a task
     const existingWorker = getWorker(me);

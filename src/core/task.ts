@@ -1,40 +1,34 @@
 import fs from "node:fs";
-import os from "node:os";
+import { execSync } from "node:child_process";
 import { nanoid } from "nanoid";
 import {
   TaskSchema,
   WorkerSchema,
-  MeSchema,
   type Task,
   type Worker,
 } from "./schema.js";
 import {
-  meFile,
   taskFile,
   tasksDir,
   workerFile,
   workersDir,
   ensureDirs,
+  getProjectRoot,
 } from "./paths.js";
 
-// --- Identity ---
+// --- Identity (from git config) ---
 
 export function getMe(): string | null {
   try {
-    const raw = JSON.parse(fs.readFileSync(meFile(), "utf-8"));
-    return MeSchema.parse(raw).name;
+    const name = execSync("git config user.name", {
+      cwd: getProjectRoot(),
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+    return name || null;
   } catch {
     return null;
   }
-}
-
-export function setMe(name: string): void {
-  ensureDirs();
-  fs.writeFileSync(meFile(), JSON.stringify({ name }, null, 2));
-}
-
-export function getMeOrDefault(): string {
-  return getMe() ?? os.hostname();
 }
 
 // --- Tasks ---

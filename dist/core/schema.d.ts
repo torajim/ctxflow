@@ -79,14 +79,6 @@ export declare const WorkerSchema: z.ZodObject<{
     }[];
 }>;
 export type Worker = z.infer<typeof WorkerSchema>;
-export declare const MeSchema: z.ZodObject<{
-    name: z.ZodString;
-}, "strip", z.ZodTypeAny, {
-    name: string;
-}, {
-    name: string;
-}>;
-export type Me = z.infer<typeof MeSchema>;
 export interface Conflict {
     file: string;
     workers: string[];

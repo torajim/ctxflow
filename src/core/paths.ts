@@ -28,10 +28,6 @@ export function contextDir(): string {
   return path.join(ctxflowDir(), "context");
 }
 
-export function meFile(): string {
-  return path.join(ctxflowDir(), "me.json");
-}
-
 export function workerFile(name: string): string {
   return path.join(workersDir(), `${name}.json`);
 }

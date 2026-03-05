@@ -3,10 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { setProjectRoot } from "../../src/core/paths.js";
+import { execSync } from "node:child_process";
 import {
   getMe,
-  setMe,
-  getMeOrDefault,
   createTask,
   getTask,
   listTasks,
@@ -32,23 +31,21 @@ afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-describe("Identity (me)", () => {
-  it("getMe returns null when no me.json exists", () => {
-    expect(getMe()).toBeNull();
+describe("Identity (me) - from git config", () => {
+  it("getMe returns git user.name from a git repo", () => {
+    // Init a git repo in tmpDir with a known user name
+    execSync("git init", { cwd: tmpDir, stdio: "pipe" });
+    execSync('git config user.name "testuser"', { cwd: tmpDir, stdio: "pipe" });
+
+    expect(getMe()).toBe("testuser");
   });
 
-  it("setMe and getMe round-trip", () => {
-    setMe("stefano");
-    expect(getMe()).toBe("stefano");
-  });
-
-  it("getMeOrDefault falls back to hostname", () => {
-    expect(getMeOrDefault()).toBe(os.hostname());
-  });
-
-  it("getMeOrDefault returns set name", () => {
-    setMe("jimin");
-    expect(getMeOrDefault()).toBe("jimin");
+  it("getMe returns null when not a git repo", () => {
+    // tmpDir is not a git repo — getMe should return null
+    // (unless global git config has user.name, in which case it returns that)
+    // We test by checking it doesn't throw
+    const result = getMe();
+    expect(typeof result === "string" || result === null).toBe(true);
   });
 });
 

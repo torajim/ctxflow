@@ -30,12 +30,6 @@ export const WorkerSchema = z.object({
 });
 export type Worker = z.infer<typeof WorkerSchema>;
 
-// --- Local Identity ---
-export const MeSchema = z.object({
-  name: z.string(),
-});
-export type Me = z.infer<typeof MeSchema>;
-
 // --- Conflict ---
 export interface Conflict {
   file: string;

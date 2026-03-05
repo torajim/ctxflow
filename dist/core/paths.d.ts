@@ -4,7 +4,6 @@ export declare function ctxflowDir(): string;
 export declare function tasksDir(): string;
 export declare function workersDir(): string;
 export declare function contextDir(): string;
-export declare function meFile(): string;
 export declare function workerFile(name: string): string;
 export declare function taskFile(id: string): string;
 export declare function contextFile(name: string): string;

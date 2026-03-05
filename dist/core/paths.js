@@ -21,9 +21,6 @@ export function workersDir() {
 export function contextDir() {
     return path.join(ctxflowDir(), "context");
 }
-export function meFile() {
-    return path.join(ctxflowDir(), "me.json");
-}
 export function workerFile(name) {
     return path.join(workersDir(), `${name}.json`);
 }

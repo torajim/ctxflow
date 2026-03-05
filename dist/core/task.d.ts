@@ -1,7 +1,5 @@
 import { type Task, type Worker } from "./schema.js";
 export declare function getMe(): string | null;
-export declare function setMe(name: string): void;
-export declare function getMeOrDefault(): string;
 export declare function createTask(description: string, createdBy: string): Task;
 export declare function getTask(id: string): Task | null;
 export declare function listTasks(): Task[];

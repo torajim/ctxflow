@@ -21,6 +21,28 @@ function syncGit(): SimpleGit {
   }).env("GIT_DIR", syncGitDir());
 }
 
+export async function isGitRepo(): Promise<boolean> {
+  try {
+    await mainGit().revparse(["--git-dir"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function initGitWithRemote(remoteUrl: string): Promise<void> {
+  const git = mainGit();
+  if (!(await isGitRepo())) {
+    await git.init();
+  }
+  try {
+    await git.addRemote("origin", remoteUrl);
+  } catch {
+    // Remote 'origin' may already exist — update it
+    await git.remote(["set-url", "origin", remoteUrl]);
+  }
+}
+
 export async function hasGitRemote(): Promise<boolean> {
   try {
     const remotes = await mainGit().getRemotes();

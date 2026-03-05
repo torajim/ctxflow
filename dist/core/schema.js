@@ -23,8 +23,4 @@ export const WorkerSchema = z.object({
     status: z.enum(["working", "idle", "disconnected"]),
     files_touched: z.array(FileChangeSchema),
 });
-// --- Local Identity ---
-export const MeSchema = z.object({
-    name: z.string(),
-});
 //# sourceMappingURL=schema.js.map

@@ -530,16 +530,33 @@ async function ensureIdentity() {
     }
     return me;
 }
-async function startNewTask(me, description) {
-    // Reuse existing session if still active
-    const existingId = getCurrentSessionId();
-    if (existingId) {
-        const existingWorker = getWorker(existingId);
-        if (existingWorker && existingWorker.name === me && existingWorker.status !== "disconnected") {
-            console.log(chalk.yellow(`\nAlready in an active session: ${existingId} (${me})`));
-            console.log(chalk.dim(`Run 'ctxflow stop' first to leave the current session.\n`));
-            return;
+function findActiveSessionForUser(me) {
+    // Check current-session file first
+    const currentId = getCurrentSessionId();
+    if (currentId) {
+        const w = getWorker(currentId);
+        if (w && w.name === me && w.status !== "disconnected") {
+            return { sessionId: currentId, worker: w };
         }
+    }
+    // Scan all sessions as fallback
+    const sessions = listSessions();
+    for (const s of sessions) {
+        if (s.name === me) {
+            const w = getWorker(s.session_id);
+            if (w && w.status !== "disconnected") {
+                return { sessionId: s.session_id, worker: w };
+            }
+        }
+    }
+    return null;
+}
+async function startNewTask(me, description) {
+    const existing = findActiveSessionForUser(me);
+    if (existing) {
+        console.log(chalk.yellow(`\nAlready in an active session: ${existing.sessionId} (${me})`));
+        console.log(chalk.dim(`Run 'ctxflow stop' first to leave the current session.\n`));
+        return;
     }
     const task = createTask(description, me);
     const session = createSession(me, task.id);
@@ -560,20 +577,16 @@ async function startNewTask(me, description) {
     printSessionInstructions(session.session_id);
 }
 async function joinExistingTask(me, taskId, taskDescription) {
-    // Reuse existing session if still active for the same task
-    const existingId = getCurrentSessionId();
-    if (existingId) {
-        const existingWorker = getWorker(existingId);
-        if (existingWorker && existingWorker.name === me && existingWorker.status !== "disconnected") {
-            if (existingWorker.task_id === taskId) {
-                console.log(chalk.yellow(`\nAlready in this task: ${existingId} (${me})`));
-                console.log(chalk.dim(`Session is still active. No action needed.\n`));
-                return;
-            }
-            console.log(chalk.yellow(`\nAlready in an active session: ${existingId} (${me})`));
-            console.log(chalk.dim(`Run 'ctxflow stop' first to leave the current session.\n`));
+    const existing = findActiveSessionForUser(me);
+    if (existing) {
+        if (existing.worker?.task_id === taskId) {
+            console.log(chalk.yellow(`\nAlready in this task: ${existing.sessionId} (${me})`));
+            console.log(chalk.dim(`Session is still active. No action needed.\n`));
             return;
         }
+        console.log(chalk.yellow(`\nAlready in an active session: ${existing.sessionId} (${me})`));
+        console.log(chalk.dim(`Run 'ctxflow stop' first to leave the current session.\n`));
+        return;
     }
     const session = createSession(me, taskId);
     const hostname = (await import("node:os")).hostname();

@@ -262,33 +262,28 @@ program
 
     let sessionId = opts.session ?? getCurrentSessionId();
 
-    // Validate the session actually has a worker; if not, fall back to name-based lookup
+    // Validate the session actually has a worker; if not, fall back
     if (sessionId && !getWorker(sessionId)) {
       sessionId = null;
     }
 
-    // If no valid session, try to find one for this user
+    // If no valid session, look at all active sessions
     if (!sessionId) {
-      const me = getMe();
-      if (!me) {
-        console.error(chalk.red("No session found. Use --session <id> or set CTXFLOW_SESSION."));
-        process.exit(1);
-      }
       const sessions = listSessions();
-      const mySessions = sessions.filter((s) => s.name === me);
-      if (mySessions.length === 0) {
+      if (sessions.length === 0) {
         console.error(chalk.red("No active session found."));
         process.exit(1);
       }
-      if (mySessions.length === 1) {
-        sessionId = mySessions[0].session_id;
+      if (sessions.length === 1) {
+        sessionId = sessions[0].session_id;
       } else {
-        console.log(chalk.yellow("Multiple active sessions found:"));
-        for (const s of mySessions) {
+        console.log(chalk.yellow("Multiple active sessions:"));
+        for (const s of sessions) {
+          const worker = getWorker(s.session_id);
           const task = getTask(s.task_id);
-          console.log(`  ${s.session_id} - "${task?.description ?? s.task_id}"`);
+          console.log(`  ${s.session_id} (${worker?.name ?? s.name}) - "${task?.description ?? s.task_id}"`);
         }
-        console.error(chalk.red("Use --session <id> to specify which session to stop."));
+        console.error(chalk.red("\nUse: ctxflow stop --session <id>"));
         process.exit(1);
       }
     }

@@ -194,14 +194,14 @@ git push -u origin main
 
 ```bash
 cd /tmp/ctxflow-demo
-git config user.name "stefano"
+export CTXFLOW_WORKER="stefano"
 ctxflow start "Todo 유틸리티 라이브러리 만들기"
 ```
 
-세션이 자동 저장됩니다. Claude Code를 실행합니다:
+세션이 자동 저장됩니다. `--verbose` 플래그로 Claude Code를 실행하면 hook이 주입하는 컨텍스트를 실시간으로 볼 수 있습니다:
 
 ```bash
-claude
+claude --verbose
 ```
 
 Claude에게 다음 프롬프트를 입력합니다:
@@ -220,14 +220,14 @@ Claude가 두 파일을 모두 생성할 때까지 기다립니다.
 
 ```bash
 cd /tmp/ctxflow-demo
-git config user.name "jimin"
+export CTXFLOW_WORKER="jimin"
 ctxflow
 ```
 
 활성 작업 목록에서 선택하면 세션이 자동 저장됩니다. Claude Code를 실행합니다:
 
 ```bash
-claude
+claude --verbose
 ```
 
 Claude에게 다음 프롬프트를 입력합니다:
@@ -346,6 +346,7 @@ rm -rf /tmp/ctxflow-demo /tmp/ctxflow-demo-remote.git
 
 | 변수 | 설명 |
 |------|------|
+| `CTXFLOW_WORKER` | 워커 이름 오버라이드 (기본값: `git config user.name`). 같은 repo에서 여러 터미널을 사용할 때 유용합니다. |
 | `CTXFLOW_SESSION` | 현재 세션 ID. `.ctxflow/current-session` 파일에서 자동 감지됩니다. 수동 오버라이드가 필요할 때만 설정합니다. |
 
 ### 설정 파일

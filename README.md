@@ -194,14 +194,14 @@ git push -u origin main
 
 ```bash
 cd /tmp/ctxflow-demo
-git config user.name "stefano"
+export CTXFLOW_WORKER="stefano"
 ctxflow start "Build a shared Todo utility library"
 ```
 
-ctxflow auto-saves the session. Launch Claude Code:
+ctxflow auto-saves the session. Launch Claude Code with `--verbose` to see hook-injected context in real time:
 
 ```bash
-claude
+claude --verbose
 ```
 
 Give Claude this exact prompt:
@@ -220,14 +220,14 @@ Open a **new terminal**:
 
 ```bash
 cd /tmp/ctxflow-demo
-git config user.name "jimin"
+export CTXFLOW_WORKER="jimin"
 ctxflow
 ```
 
-ctxflow auto-saves the session. Launch Claude Code:
+Select the active task from the list. Then launch Claude Code:
 
 ```bash
-claude
+claude --verbose
 ```
 
 Now give Claude this prompt:
@@ -346,6 +346,7 @@ rm -rf /tmp/ctxflow-demo /tmp/ctxflow-demo-remote.git
 
 | Variable | Description |
 |----------|-------------|
+| `CTXFLOW_WORKER` | Override worker name (defaults to `git config user.name`). Useful when running multiple terminals in the same repo. |
 | `CTXFLOW_SESSION` | Current session ID. Auto-detected from `.ctxflow/current-session` file. Set manually only if you need to override. |
 
 ### Configuration

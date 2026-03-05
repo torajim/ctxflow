@@ -13,6 +13,8 @@ function writeFileAtomic(filePath, parentDir, data) {
 }
 // --- Identity (from git config) ---
 export function getMe() {
+    if (process.env.CTXFLOW_WORKER)
+        return process.env.CTXFLOW_WORKER;
     try {
         const name = execFileSync("git", ["config", "user.name"], {
             cwd: getProjectRoot(),

@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { nanoid } from "nanoid";
 import {
   TaskSchema,
@@ -16,11 +16,21 @@ import {
   getProjectRoot,
 } from "./paths.js";
 
+const MAX_FILES_TOUCHED = 50;
+
+// --- Atomic file write ---
+
+function writeFileAtomic(filePath: string, data: string): void {
+  const tmpPath = filePath + ".tmp." + process.pid;
+  fs.writeFileSync(tmpPath, data);
+  fs.renameSync(tmpPath, filePath);
+}
+
 // --- Identity (from git config) ---
 
 export function getMe(): string | null {
   try {
-    const name = execSync("git config user.name", {
+    const name = execFileSync("git", ["config", "user.name"], {
       cwd: getProjectRoot(),
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
@@ -42,7 +52,7 @@ export function createTask(description: string, createdBy: string): Task {
     created_at: new Date().toISOString(),
     status: "active",
   };
-  fs.writeFileSync(taskFile(task.id), JSON.stringify(task, null, 2));
+  writeFileAtomic(taskFile(task.id), JSON.stringify(task, null, 2));
   return task;
 }
 
@@ -82,7 +92,7 @@ export function updateTaskStatus(
   const task = getTask(id);
   if (!task) return null;
   task.status = status;
-  fs.writeFileSync(taskFile(id), JSON.stringify(task, null, 2));
+  writeFileAtomic(taskFile(id), JSON.stringify(task, null, 2));
   return task;
 }
 
@@ -121,7 +131,7 @@ export function listWorkers(): Worker[] {
 
 export function saveWorker(worker: Worker): void {
   ensureDirs();
-  fs.writeFileSync(workerFile(worker.name), JSON.stringify(worker, null, 2));
+  writeFileAtomic(workerFile(worker.name), JSON.stringify(worker, null, 2));
 }
 
 export function createWorker(
@@ -136,7 +146,7 @@ export function createWorker(
     task_id: taskId,
     joined_at: now,
     last_heartbeat: now,
-    status: "idle",
+    status: "working",
     files_touched: [],
   };
   saveWorker(worker);
@@ -167,6 +177,10 @@ export function addFileChange(
       summary,
       updated_at: new Date().toISOString(),
     });
+  }
+  // Prune old entries to prevent unbounded growth
+  if (worker.files_touched.length > MAX_FILES_TOUCHED) {
+    worker.files_touched = worker.files_touched.slice(-MAX_FILES_TOUCHED);
   }
   saveWorker(worker);
 }

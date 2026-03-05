@@ -10,7 +10,9 @@ import { fileURLToPath } from "node:url";
 import {
   getMe,
   createTask,
+  getTask,
   listTasks,
+  updateTaskStatus,
   getWorker,
   saveWorker,
   createWorker,
@@ -117,8 +119,8 @@ program
         console.error(chalk.red("A name is required to identify your work."));
         process.exit(1);
       }
-      const { execSync } = await import("node:child_process");
-      execSync(`git config user.name "${name.trim()}"`, { stdio: "pipe" });
+      const { execFileSync } = await import("node:child_process");
+      execFileSync("git", ["config", "user.name", name.trim()], { stdio: "pipe" });
       me = name.trim();
       console.log(chalk.dim(`git user.name set to "${me}"`));
     }
@@ -180,6 +182,17 @@ program
       process.exit(1);
     }
 
+    // Mark task as done if no other active participants
+    if (worker.task_id) {
+      const participants = getTaskParticipants(worker.task_id);
+      const othersActive = participants.some(
+        (p) => p.name !== me && (p.status === "working" || p.status === "idle"),
+      );
+      if (!othersActive) {
+        updateTaskStatus(worker.task_id, "done");
+      }
+    }
+
     worker.status = "disconnected";
     worker.task_id = null;
     saveWorker(worker);
@@ -188,6 +201,64 @@ program
     stopDaemonIfIdle();
 
     console.log(chalk.yellow("\nTask stopped.\n"));
+  });
+
+// ctxflow join <task-id>
+program
+  .command("join")
+  .description("Join an existing task")
+  .argument("<task-id>", "Task ID to join")
+  .action(async (taskId: string) => {
+    ensureDirs();
+
+    const task = getTask(taskId);
+    if (!task) {
+      console.error(chalk.red(`Task not found: ${taskId}`));
+      process.exit(1);
+    }
+    if (task.status !== "active") {
+      console.error(chalk.red(`Task is not active: ${taskId}`));
+      process.exit(1);
+    }
+
+    let me = getMe();
+    if (!me) {
+      const name = await promptInput("git user.name is not set. Enter your name: ");
+      if (!name.trim()) {
+        console.error(chalk.red("A name is required to identify your work."));
+        process.exit(1);
+      }
+      const { execFileSync } = await import("node:child_process");
+      execFileSync("git", ["config", "user.name", name.trim()], { stdio: "pipe" });
+      me = name.trim();
+    }
+
+    const existingWorker = getWorker(me);
+    if (existingWorker && existingWorker.task_id) {
+      console.error(
+        chalk.red(
+          `Already participating in task: ${existingWorker.task_id}\nRun "ctxflow stop" first.`,
+        ),
+      );
+      process.exit(1);
+    }
+
+    const hostname = (await import("node:os")).hostname();
+    const worker = createWorker(me, hostname, taskId);
+    saveWorker(worker);
+
+    const ctxFile = contextFile(me);
+    if (!fs.existsSync(ctxFile)) {
+      fs.writeFileSync(ctxFile, "");
+    }
+
+    ensureGitignore();
+    installHooks();
+    startDaemonIfNeeded();
+
+    console.log(chalk.green(`\nJoined task: ${task.description}`));
+    console.log(chalk.dim(`Task ID: ${taskId}`));
+    console.log(chalk.dim(`Worker: ${me}\n`));
   });
 
 // ctxflow context
@@ -235,6 +306,13 @@ program
 
     const filename = filePath.split("/").pop() ?? filePath;
     addFileChange(me, filePath, `+modified ${filename}`);
+
+    // Mark worker as actively working on file edit
+    const worker = getWorker(me);
+    if (worker && worker.status !== "working") {
+      worker.status = "working";
+      saveWorker(worker);
+    }
   });
 
 // ctxflow on-session-end
@@ -290,15 +368,28 @@ function promptInput(prompt: string): Promise<string> {
 
 function readStdin(): Promise<string> {
   return new Promise((resolve) => {
+    if (process.stdin.isTTY) {
+      resolve("");
+      return;
+    }
     let data = "";
+    let resolved = false;
     process.stdin.setEncoding("utf-8");
     process.stdin.on("data", (chunk) => {
       data += chunk;
     });
     process.stdin.on("end", () => {
-      resolve(data);
+      if (!resolved) {
+        resolved = true;
+        resolve(data);
+      }
     });
-    setTimeout(() => resolve(data), 1000);
+    setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        resolve(data);
+      }
+    }, 100);
   });
 }
 

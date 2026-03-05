@@ -5,7 +5,7 @@ import fs from "node:fs";
 import readline from "node:readline";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { getMe, createTask, listTasks, getWorker, saveWorker, createWorker, listWorkers, getTaskParticipants, addFileChange, } from "./core/task.js";
+import { getMe, createTask, getTask, listTasks, updateTaskStatus, getWorker, saveWorker, createWorker, listWorkers, getTaskParticipants, addFileChange, } from "./core/task.js";
 import { hasGitRemote, isGitRepo, initGitWithRemote } from "./core/sync.js";
 import { generateContext } from "./core/context.js";
 import { ensureDirs, daemonPidFile, contextFile, } from "./core/paths.js";
@@ -84,8 +84,8 @@ program
             console.error(chalk.red("A name is required to identify your work."));
             process.exit(1);
         }
-        const { execSync } = await import("node:child_process");
-        execSync(`git config user.name "${name.trim()}"`, { stdio: "pipe" });
+        const { execFileSync } = await import("node:child_process");
+        execFileSync("git", ["config", "user.name", name.trim()], { stdio: "pipe" });
         me = name.trim();
         console.log(chalk.dim(`git user.name set to "${me}"`));
     }
@@ -132,12 +132,66 @@ program
         console.error(chalk.red("No active worker found."));
         process.exit(1);
     }
+    // Mark task as done if no other active participants
+    if (worker.task_id) {
+        const participants = getTaskParticipants(worker.task_id);
+        const othersActive = participants.some((p) => p.name !== me && (p.status === "working" || p.status === "idle"));
+        if (!othersActive) {
+            updateTaskStatus(worker.task_id, "done");
+        }
+    }
     worker.status = "disconnected";
     worker.task_id = null;
     saveWorker(worker);
     // Stop daemon if no other local workers active
     stopDaemonIfIdle();
     console.log(chalk.yellow("\nTask stopped.\n"));
+});
+// ctxflow join <task-id>
+program
+    .command("join")
+    .description("Join an existing task")
+    .argument("<task-id>", "Task ID to join")
+    .action(async (taskId) => {
+    ensureDirs();
+    const task = getTask(taskId);
+    if (!task) {
+        console.error(chalk.red(`Task not found: ${taskId}`));
+        process.exit(1);
+    }
+    if (task.status !== "active") {
+        console.error(chalk.red(`Task is not active: ${taskId}`));
+        process.exit(1);
+    }
+    let me = getMe();
+    if (!me) {
+        const name = await promptInput("git user.name is not set. Enter your name: ");
+        if (!name.trim()) {
+            console.error(chalk.red("A name is required to identify your work."));
+            process.exit(1);
+        }
+        const { execFileSync } = await import("node:child_process");
+        execFileSync("git", ["config", "user.name", name.trim()], { stdio: "pipe" });
+        me = name.trim();
+    }
+    const existingWorker = getWorker(me);
+    if (existingWorker && existingWorker.task_id) {
+        console.error(chalk.red(`Already participating in task: ${existingWorker.task_id}\nRun "ctxflow stop" first.`));
+        process.exit(1);
+    }
+    const hostname = (await import("node:os")).hostname();
+    const worker = createWorker(me, hostname, taskId);
+    saveWorker(worker);
+    const ctxFile = contextFile(me);
+    if (!fs.existsSync(ctxFile)) {
+        fs.writeFileSync(ctxFile, "");
+    }
+    ensureGitignore();
+    installHooks();
+    startDaemonIfNeeded();
+    console.log(chalk.green(`\nJoined task: ${task.description}`));
+    console.log(chalk.dim(`Task ID: ${taskId}`));
+    console.log(chalk.dim(`Worker: ${me}\n`));
 });
 // ctxflow context
 program
@@ -181,6 +235,12 @@ program
         return;
     const filename = filePath.split("/").pop() ?? filePath;
     addFileChange(me, filePath, `+modified ${filename}`);
+    // Mark worker as actively working on file edit
+    const worker = getWorker(me);
+    if (worker && worker.status !== "working") {
+        worker.status = "working";
+        saveWorker(worker);
+    }
 });
 // ctxflow on-session-end
 program
@@ -232,15 +292,28 @@ function promptInput(prompt) {
 }
 function readStdin() {
     return new Promise((resolve) => {
+        if (process.stdin.isTTY) {
+            resolve("");
+            return;
+        }
         let data = "";
+        let resolved = false;
         process.stdin.setEncoding("utf-8");
         process.stdin.on("data", (chunk) => {
             data += chunk;
         });
         process.stdin.on("end", () => {
-            resolve(data);
+            if (!resolved) {
+                resolved = true;
+                resolve(data);
+            }
         });
-        setTimeout(() => resolve(data), 1000);
+        setTimeout(() => {
+            if (!resolved) {
+                resolved = true;
+                resolve(data);
+            }
+        }, 100);
     });
 }
 function startDaemonIfNeeded() {

@@ -1,16 +1,11 @@
 import fs from "node:fs";
-import path from "node:path";
 import { getMe, listWorkers, saveWorker, updateHeartbeat } from "./core/task.js";
 import { hasGitRemote, ensureCtxflowBranch, fullSync } from "./core/sync.js";
-import { daemonPidFile, ctxflowDir } from "./core/paths.js";
+import { daemonPidFile } from "./core/paths.js";
+import { logDebug } from "./core/log.js";
 const SYNC_INTERVAL_MS = 5_000;
 const INACTIVE_THRESHOLD_MS = 60_000;
 let intervalHandle = null;
-function logToFile(message) {
-    const logPath = path.join(ctxflowDir(), "daemon.log");
-    const timestamp = new Date().toISOString();
-    fs.appendFileSync(logPath, `[${timestamp}] ${message}\n`);
-}
 function writePid() {
     fs.writeFileSync(daemonPidFile(), String(process.pid));
 }
@@ -29,6 +24,7 @@ function markInactiveWorkers() {
         if ((worker.status === "working" || worker.status === "idle") &&
             now - new Date(worker.last_heartbeat).getTime() > INACTIVE_THRESHOLD_MS) {
             saveWorker({ ...worker, status: "disconnected" });
+            logDebug(`marked ${worker.name} as disconnected (heartbeat timeout)`);
         }
     }
 }
@@ -45,7 +41,7 @@ async function syncLoop() {
         markInactiveWorkers();
     }
     catch (err) {
-        logToFile(`sync error: ${err instanceof Error ? err.message : String(err)}`);
+        logDebug(`sync error: ${err instanceof Error ? err.message : String(err)}`);
     }
 }
 export function isDaemonRunning() {
@@ -78,17 +74,18 @@ function gracefulShutdown() {
         intervalHandle = null;
     }
     removePidFile();
+    logDebug("Daemon stopped gracefully");
     process.exit(0);
 }
 export async function runDaemon() {
     if (isDaemonRunning()) {
-        logToFile("Daemon already running, exiting.");
+        logDebug("Daemon already running, exiting.");
         return;
     }
     writePid();
     process.on("SIGTERM", gracefulShutdown);
     process.on("SIGINT", gracefulShutdown);
-    logToFile("Daemon started (pid " + process.pid + ")");
+    logDebug("Daemon started (pid " + process.pid + ")");
     // Run once immediately, then on interval
     await syncLoop();
     intervalHandle = setInterval(() => {

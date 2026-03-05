@@ -110,7 +110,7 @@ describe("Worker CRUD", () => {
     expect(worker.name).toBe("stefano");
     expect(worker.machine).toBe("macbook");
     expect(worker.task_id).toBe("task-1");
-    expect(worker.status).toBe("idle");
+    expect(worker.status).toBe("working");
     expect(worker.files_touched).toEqual([]);
 
     const retrieved = getWorker("stefano");
@@ -201,6 +201,17 @@ describe("addFileChange", () => {
     addFileChange("ghost", "src/a.ts", "+something");
     // Should not throw
   });
+
+  it("prunes old entries when exceeding limit", () => {
+    createWorker("stefano", "mac", "t1");
+    for (let i = 0; i < 60; i++) {
+      addFileChange("stefano", `src/file${i}.ts`, `+file${i}`);
+    }
+    const worker = getWorker("stefano");
+    expect(worker!.files_touched.length).toBeLessThanOrEqual(50);
+    // Most recent files should be preserved
+    expect(worker!.files_touched[worker!.files_touched.length - 1].path).toBe("src/file59.ts");
+  });
 });
 
 describe("getTaskParticipants", () => {
@@ -228,7 +239,8 @@ describe("getActiveWorkers", () => {
     saveWorker(w1);
 
     const w2 = createWorker("jimin", "mac2", "t1");
-    // w2 is idle by default
+    w2.status = "idle";
+    saveWorker(w2);
 
     const w3 = createWorker("minho", "mac3", "t1");
     w3.status = "disconnected";

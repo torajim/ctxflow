@@ -1,19 +1,13 @@
 import fs from "node:fs";
-import path from "node:path";
 import { getMe, listWorkers, saveWorker, updateHeartbeat } from "./core/task.js";
 import { hasGitRemote, ensureCtxflowBranch, fullSync } from "./core/sync.js";
 import { daemonPidFile, ctxflowDir } from "./core/paths.js";
+import { logDebug } from "./core/log.js";
 
 const SYNC_INTERVAL_MS = 5_000;
 const INACTIVE_THRESHOLD_MS = 60_000;
 
 let intervalHandle: ReturnType<typeof setInterval> | null = null;
-
-function logToFile(message: string): void {
-  const logPath = path.join(ctxflowDir(), "daemon.log");
-  const timestamp = new Date().toISOString();
-  fs.appendFileSync(logPath, `[${timestamp}] ${message}\n`);
-}
 
 function writePid(): void {
   fs.writeFileSync(daemonPidFile(), String(process.pid));
@@ -37,6 +31,7 @@ function markInactiveWorkers(): void {
       now - new Date(worker.last_heartbeat).getTime() > INACTIVE_THRESHOLD_MS
     ) {
       saveWorker({ ...worker, status: "disconnected" });
+      logDebug(`marked ${worker.name} as disconnected (heartbeat timeout)`);
     }
   }
 }
@@ -54,7 +49,7 @@ async function syncLoop(): Promise<void> {
     await fullSync(me);
     markInactiveWorkers();
   } catch (err) {
-    logToFile(`sync error: ${err instanceof Error ? err.message : String(err)}`);
+    logDebug(`sync error: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -87,12 +82,13 @@ function gracefulShutdown(): void {
     intervalHandle = null;
   }
   removePidFile();
+  logDebug("Daemon stopped gracefully");
   process.exit(0);
 }
 
 export async function runDaemon(): Promise<void> {
   if (isDaemonRunning()) {
-    logToFile("Daemon already running, exiting.");
+    logDebug("Daemon already running, exiting.");
     return;
   }
 
@@ -101,7 +97,7 @@ export async function runDaemon(): Promise<void> {
   process.on("SIGTERM", gracefulShutdown);
   process.on("SIGINT", gracefulShutdown);
 
-  logToFile("Daemon started (pid " + process.pid + ")");
+  logDebug("Daemon started (pid " + process.pid + ")");
 
   // Run once immediately, then on interval
   await syncLoop();

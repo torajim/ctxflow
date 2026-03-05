@@ -4,11 +4,13 @@ import type { Worker } from "../../src/core/schema.js";
 
 function makeWorker(
   name: string,
+  sessionId: string,
   files: string[],
   status: "working" | "idle" | "disconnected" = "working",
 ): Worker {
   return {
     name,
+    session_id: sessionId,
     machine: "test",
     task_id: "t1",
     joined_at: new Date().toISOString(),
@@ -25,27 +27,27 @@ function makeWorker(
 describe("detectConflicts", () => {
   it("returns empty when no overlapping files", () => {
     const workers = [
-      makeWorker("stefano", ["src/auth.ts", "src/types.ts"]),
-      makeWorker("jimin", ["src/users.ts", "src/db.ts"]),
+      makeWorker("stefano", "s1", ["src/auth.ts", "src/types.ts"]),
+      makeWorker("jimin", "s2", ["src/users.ts", "src/db.ts"]),
     ];
     expect(detectConflicts(workers)).toEqual([]);
   });
 
   it("detects single file conflict between 2 workers", () => {
     const workers = [
-      makeWorker("stefano", ["src/types.ts", "src/auth.ts"]),
-      makeWorker("jimin", ["src/types.ts", "src/users.ts"]),
+      makeWorker("stefano", "s1", ["src/types.ts", "src/auth.ts"]),
+      makeWorker("jimin", "s2", ["src/types.ts", "src/users.ts"]),
     ];
     const conflicts = detectConflicts(workers);
     expect(conflicts).toHaveLength(1);
     expect(conflicts[0].file).toBe("src/types.ts");
-    expect(conflicts[0].workers.sort()).toEqual(["jimin", "stefano"]);
+    expect(conflicts[0].workers.sort()).toEqual(["s1", "s2"]);
   });
 
   it("detects multiple file conflicts", () => {
     const workers = [
-      makeWorker("stefano", ["src/types.ts", "src/index.ts"]),
-      makeWorker("jimin", ["src/types.ts", "src/index.ts"]),
+      makeWorker("stefano", "s1", ["src/types.ts", "src/index.ts"]),
+      makeWorker("jimin", "s2", ["src/types.ts", "src/index.ts"]),
     ];
     const conflicts = detectConflicts(workers);
     expect(conflicts).toHaveLength(2);
@@ -55,27 +57,27 @@ describe("detectConflicts", () => {
 
   it("detects 3-way conflict", () => {
     const workers = [
-      makeWorker("stefano", ["src/shared.ts"]),
-      makeWorker("jimin", ["src/shared.ts"]),
-      makeWorker("minho", ["src/shared.ts"]),
+      makeWorker("stefano", "s1", ["src/shared.ts"]),
+      makeWorker("jimin", "s2", ["src/shared.ts"]),
+      makeWorker("minho", "s3", ["src/shared.ts"]),
     ];
     const conflicts = detectConflicts(workers);
     expect(conflicts).toHaveLength(1);
-    expect(conflicts[0].workers.sort()).toEqual(["jimin", "minho", "stefano"]);
+    expect(conflicts[0].workers.sort()).toEqual(["s1", "s2", "s3"]);
   });
 
   it("ignores disconnected workers", () => {
     const workers = [
-      makeWorker("stefano", ["src/types.ts"], "working"),
-      makeWorker("jimin", ["src/types.ts"], "disconnected"),
+      makeWorker("stefano", "s1", ["src/types.ts"], "working"),
+      makeWorker("jimin", "s2", ["src/types.ts"], "disconnected"),
     ];
     expect(detectConflicts(workers)).toEqual([]);
   });
 
   it("ignores idle workers", () => {
     const workers = [
-      makeWorker("stefano", ["src/types.ts"], "working"),
-      makeWorker("jimin", ["src/types.ts"], "idle"),
+      makeWorker("stefano", "s1", ["src/types.ts"], "working"),
+      makeWorker("jimin", "s2", ["src/types.ts"], "idle"),
     ];
     expect(detectConflicts(workers)).toEqual([]);
   });
@@ -85,7 +87,17 @@ describe("detectConflicts", () => {
   });
 
   it("returns empty for single worker", () => {
-    const workers = [makeWorker("stefano", ["src/a.ts", "src/b.ts"])];
+    const workers = [makeWorker("stefano", "s1", ["src/a.ts", "src/b.ts"])];
     expect(detectConflicts(workers)).toEqual([]);
+  });
+
+  it("detects conflict between same-user different sessions", () => {
+    const workers = [
+      makeWorker("stefano", "sess-1", ["src/types.ts"]),
+      makeWorker("stefano", "sess-2", ["src/types.ts"]),
+    ];
+    const conflicts = detectConflicts(workers);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0].workers.sort()).toEqual(["sess-1", "sess-2"]);
   });
 });

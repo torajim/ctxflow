@@ -21,20 +21,26 @@ export function workersDir() {
 export function contextDir() {
     return path.join(ctxflowDir(), "context");
 }
-export function workerFile(name) {
-    return path.join(workersDir(), `${name}.json`);
+export function sessionsDir() {
+    return path.join(ctxflowDir(), "sessions");
+}
+export function workerFile(sessionId) {
+    return path.join(workersDir(), `${sessionId}.json`);
 }
 export function taskFile(id) {
     return path.join(tasksDir(), `${id}.json`);
 }
-export function contextFile(name) {
-    return path.join(contextDir(), `${name}.md`);
+export function contextFile(sessionId) {
+    return path.join(contextDir(), `${sessionId}.md`);
+}
+export function sessionFile(sessionId) {
+    return path.join(sessionsDir(), `${sessionId}.json`);
 }
 export function daemonPidFile() {
     return path.join(ctxflowDir(), "daemon.pid");
 }
 export function ensureDirs() {
-    for (const dir of [ctxflowDir(), tasksDir(), workersDir(), contextDir()]) {
+    for (const dir of [ctxflowDir(), tasksDir(), workersDir(), contextDir(), sessionsDir()]) {
         fs.mkdirSync(dir, { recursive: true });
     }
 }

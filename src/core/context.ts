@@ -4,9 +4,9 @@ import { detectConflicts } from "./conflict.js";
 import { contextFile } from "./paths.js";
 import type { Worker, Conflict } from "./schema.js";
 
-function readContextFile(name: string): string | null {
+function readContextFile(sessionId: string): string | null {
   try {
-    return fs.readFileSync(contextFile(name), "utf-8");
+    return fs.readFileSync(contextFile(sessionId), "utf-8");
   } catch {
     return null;
   }
@@ -25,8 +25,12 @@ function formatFileChanges(worker: Worker): string {
   return `  recent: ${items}`;
 }
 
-function isConflicting(workerName: string, conflicts: Conflict[]): boolean {
-  return conflicts.some((c) => c.workers.includes(workerName));
+function isConflicting(sessionId: string, conflicts: Conflict[]): boolean {
+  return conflicts.some((c) => c.workers.includes(sessionId));
+}
+
+function displayLabel(worker: Worker): string {
+  return worker.name;
 }
 
 function formatWorkerSummary(
@@ -36,7 +40,7 @@ function formatWorkerSummary(
 ): string {
   const approach = contextContent ? summaryLines(contextContent) : "";
   const desc = taskDesc ?? "(no task)";
-  let line = `- ${worker.name}: "${desc}"`;
+  let line = `- ${displayLabel(worker)}: "${desc}"`;
   if (approach) line += ` | ${approach}`;
   const files = formatFileChanges(worker);
   if (files) line += `\n${files}`;
@@ -51,30 +55,43 @@ function formatWorkerDetailed(
 ): string {
   const desc = taskDesc ?? "(no task)";
   const lines: string[] = [];
-  lines.push(`- ${worker.name}: "${desc}"`);
+  lines.push(`- ${displayLabel(worker)}: "${desc}"`);
   if (contextContent) {
     lines.push(`  approach:\n${contextContent.split("\n").map((l) => `    ${l}`).join("\n")}`);
   }
   const files = formatFileChanges(worker);
   if (files) lines.push(files);
   for (const c of workerConflicts) {
-    lines.push(`  ⚠ conflict: ${c.file} (${c.workers.join(", ")})`);
+    const workerNames = c.workers.map((sid) => {
+      const w = allWorkersCache.get(sid);
+      return w ? displayLabel(w) : sid;
+    });
+    lines.push(`  ⚠ conflict: ${c.file} (${workerNames.join(", ")})`);
   }
   return lines.join("\n");
 }
 
+// Cache for resolving session IDs to display names in conflict output
+let allWorkersCache = new Map<string, Worker>();
+
 export function generateContext(
-  myName: string,
+  mySessionId: string | null,
   format: "hook" | "text",
 ): string {
   const allWorkers = listWorkers();
+
+  // Build cache for display name resolution
+  allWorkersCache = new Map(allWorkers.map((w) => [w.session_id, w]));
+
   const otherWorkers = allWorkers.filter(
     (w) =>
-      w.name !== myName && (w.status === "working" || w.status === "idle"),
+      w.session_id !== mySessionId &&
+      (w.status === "working" || w.status === "idle"),
   );
 
   if (otherWorkers.length === 0) return "";
 
+  // Use session_id for conflict detection keys
   const conflicts = detectConflicts(allWorkers);
   const hasConflicts = conflicts.length > 0;
   const manyWorkers = otherWorkers.length >= 5;
@@ -83,17 +100,17 @@ export function generateContext(
   sections.push("[ctxflow] collaboration status:");
 
   if (manyWorkers && hasConflicts) {
-    const conflictingNames = new Set(conflicts.flatMap((c) => c.workers));
+    const conflictingSessions = new Set(conflicts.flatMap((c) => c.workers));
     const conflictingWorkers = otherWorkers.filter((w) =>
-      conflictingNames.has(w.name),
+      conflictingSessions.has(w.session_id),
     );
     const otherCount = otherWorkers.length - conflictingWorkers.length;
 
     for (const worker of conflictingWorkers) {
       const task = worker.task_id ? getTask(worker.task_id) : null;
-      const ctx = readContextFile(worker.name);
+      const ctx = readContextFile(worker.session_id);
       const workerConflicts = conflicts.filter((c) =>
-        c.workers.includes(worker.name),
+        c.workers.includes(worker.session_id),
       );
       sections.push(
         formatWorkerDetailed(
@@ -111,11 +128,11 @@ export function generateContext(
   } else {
     for (const worker of otherWorkers) {
       const task = worker.task_id ? getTask(worker.task_id) : null;
-      const ctx = readContextFile(worker.name);
+      const ctx = readContextFile(worker.session_id);
 
-      if (hasConflicts && isConflicting(worker.name, conflicts)) {
+      if (hasConflicts && isConflicting(worker.session_id, conflicts)) {
         const workerConflicts = conflicts.filter((c) =>
-          c.workers.includes(worker.name),
+          c.workers.includes(worker.session_id),
         );
         sections.push(
           formatWorkerDetailed(
@@ -133,9 +150,14 @@ export function generateContext(
     }
   }
 
+  // Determine display name for the instruction
+  const myName = mySessionId
+    ? (allWorkersCache.get(mySessionId)?.name ?? "unknown")
+    : "unknown";
+
   sections.push("");
   sections.push(
-    `[ctxflow] When making key architectural decisions or changing your approach,\nplease update .ctxflow/context/${myName}.md with a brief summary.`,
+    `[ctxflow] When making key architectural decisions or changing your approach,\nplease update .ctxflow/context/${mySessionId ?? myName}.md with a brief summary.`,
   );
 
   const body = sections.join("\n");

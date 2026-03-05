@@ -9,17 +9,17 @@ export function detectConflicts(workers: Worker[]): Conflict[] {
     for (const file of worker.files_touched) {
       const existing = fileMap.get(file.path);
       if (existing) {
-        existing.push(worker.name);
+        existing.push(worker.session_id);
       } else {
-        fileMap.set(file.path, [worker.name]);
+        fileMap.set(file.path, [worker.session_id]);
       }
     }
   }
 
   const conflicts: Conflict[] = [];
-  for (const [file, workerNames] of fileMap) {
-    if (workerNames.length > 1) {
-      conflicts.push({ file, workers: workerNames });
+  for (const [file, workerSessionIds] of fileMap) {
+    if (workerSessionIds.length > 1) {
+      conflicts.push({ file, workers: workerSessionIds });
     }
   }
 

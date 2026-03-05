@@ -4,14 +4,19 @@ import { nanoid } from "nanoid";
 import {
   TaskSchema,
   WorkerSchema,
+  SessionSchema,
   type Task,
   type Worker,
+  type Session,
 } from "./schema.js";
 import {
   taskFile,
   tasksDir,
   workerFile,
   workersDir,
+  sessionFile,
+  sessionsDir,
+  contextFile,
   ensureDirs,
   getProjectRoot,
 } from "./paths.js";
@@ -39,6 +44,78 @@ export function getMe(): string | null {
   } catch {
     return null;
   }
+}
+
+// --- Sessions ---
+
+export function createSession(
+  name: string,
+  taskId: string,
+  daemonPid: number | null = null,
+): Session {
+  ensureDirs();
+  const sessionId = nanoid(8);
+  const session: Session = {
+    session_id: sessionId,
+    name,
+    task_id: taskId,
+    daemon_pid: daemonPid,
+    created_at: new Date().toISOString(),
+  };
+  writeFileAtomic(sessionFile(sessionId), JSON.stringify(session, null, 2));
+  return session;
+}
+
+export function getSession(sessionId: string): Session | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(sessionFile(sessionId), "utf-8"));
+    return SessionSchema.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function updateSessionDaemonPid(sessionId: string, pid: number): void {
+  const session = getSession(sessionId);
+  if (!session) return;
+  session.daemon_pid = pid;
+  writeFileAtomic(sessionFile(sessionId), JSON.stringify(session, null, 2));
+}
+
+export function listSessions(): Session[] {
+  try {
+    const files = fs.readdirSync(sessionsDir()).filter((f) => f.endsWith(".json"));
+    return files
+      .map((f) => {
+        try {
+          const raw = JSON.parse(fs.readFileSync(`${sessionsDir()}/${f}`, "utf-8"));
+          return SessionSchema.parse(raw);
+        } catch {
+          return null;
+        }
+      })
+      .filter((s): s is Session => s !== null);
+  } catch {
+    return [];
+  }
+}
+
+export function removeSession(sessionId: string): void {
+  try {
+    fs.unlinkSync(sessionFile(sessionId));
+  } catch {
+    // Already removed
+  }
+}
+
+export function getCurrentSessionId(): string | null {
+  return process.env.CTXFLOW_SESSION ?? null;
+}
+
+export function getCurrentSession(): Session | null {
+  const sessionId = getCurrentSessionId();
+  if (!sessionId) return null;
+  return getSession(sessionId);
 }
 
 // --- Tasks ---
@@ -98,9 +175,9 @@ export function updateTaskStatus(
 
 // --- Workers ---
 
-export function getWorker(name: string): Worker | null {
+export function getWorker(sessionId: string): Worker | null {
   try {
-    const raw = JSON.parse(fs.readFileSync(workerFile(name), "utf-8"));
+    const raw = JSON.parse(fs.readFileSync(workerFile(sessionId), "utf-8"));
     return WorkerSchema.parse(raw);
   } catch {
     return null;
@@ -131,17 +208,19 @@ export function listWorkers(): Worker[] {
 
 export function saveWorker(worker: Worker): void {
   ensureDirs();
-  writeFileAtomic(workerFile(worker.name), JSON.stringify(worker, null, 2));
+  writeFileAtomic(workerFile(worker.session_id), JSON.stringify(worker, null, 2));
 }
 
 export function createWorker(
   name: string,
   machine: string,
   taskId: string,
+  sessionId: string,
 ): Worker {
   const now = new Date().toISOString();
   const worker: Worker = {
     name,
+    session_id: sessionId,
     machine,
     task_id: taskId,
     joined_at: now,
@@ -153,19 +232,19 @@ export function createWorker(
   return worker;
 }
 
-export function updateHeartbeat(name: string): void {
-  const worker = getWorker(name);
+export function updateHeartbeat(sessionId: string): void {
+  const worker = getWorker(sessionId);
   if (!worker) return;
   worker.last_heartbeat = new Date().toISOString();
   saveWorker(worker);
 }
 
 export function addFileChange(
-  workerName: string,
+  sessionId: string,
   filePath: string,
   summary: string,
 ): void {
-  const worker = getWorker(workerName);
+  const worker = getWorker(sessionId);
   if (!worker) return;
   const existing = worker.files_touched.find((f) => f.path === filePath);
   if (existing) {

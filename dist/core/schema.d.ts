@@ -35,6 +35,7 @@ export declare const FileChangeSchema: z.ZodObject<{
 export type FileChange = z.infer<typeof FileChangeSchema>;
 export declare const WorkerSchema: z.ZodObject<{
     name: z.ZodString;
+    session_id: z.ZodString;
     machine: z.ZodString;
     task_id: z.ZodNullable<z.ZodString>;
     joined_at: z.ZodString;
@@ -56,6 +57,7 @@ export declare const WorkerSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     status: "working" | "idle" | "disconnected";
     name: string;
+    session_id: string;
     machine: string;
     task_id: string | null;
     joined_at: string;
@@ -68,6 +70,7 @@ export declare const WorkerSchema: z.ZodObject<{
 }, {
     status: "working" | "idle" | "disconnected";
     name: string;
+    session_id: string;
     machine: string;
     task_id: string | null;
     joined_at: string;
@@ -79,6 +82,26 @@ export declare const WorkerSchema: z.ZodObject<{
     }[];
 }>;
 export type Worker = z.infer<typeof WorkerSchema>;
+export declare const SessionSchema: z.ZodObject<{
+    session_id: z.ZodString;
+    name: z.ZodString;
+    task_id: z.ZodString;
+    daemon_pid: z.ZodNullable<z.ZodNumber>;
+    created_at: z.ZodString;
+}, "strip", z.ZodTypeAny, {
+    created_at: string;
+    name: string;
+    session_id: string;
+    task_id: string;
+    daemon_pid: number | null;
+}, {
+    created_at: string;
+    name: string;
+    session_id: string;
+    task_id: string;
+    daemon_pid: number | null;
+}>;
+export type Session = z.infer<typeof SessionSchema>;
 export interface Conflict {
     file: string;
     workers: string[];

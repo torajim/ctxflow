@@ -1,1 +1,1 @@
-export declare function generateContext(myName: string, format: "hook" | "text"): string;
+export declare function generateContext(mySessionId: string | null, format: "hook" | "text"): string;

@@ -20,57 +20,56 @@ afterEach(() => {
 
 describe("generateContext", () => {
   it("returns empty string when no other workers", () => {
-    createWorker("stefano", "mac", "t1");
-    expect(generateContext("stefano", "text")).toBe("");
+    createWorker("stefano", "mac", "t1", "sess-1");
+    expect(generateContext("sess-1", "text")).toBe("");
   });
 
   it("returns empty string when only disconnected workers exist", () => {
-    const w1 = createWorker("stefano", "mac1", "t1");
+    const w1 = createWorker("stefano", "mac1", "t1", "sess-1");
     w1.status = "working";
     saveWorker(w1);
 
-    const w2 = createWorker("jimin", "mac2", "t1");
+    const w2 = createWorker("jimin", "mac2", "t1", "sess-2");
     w2.status = "disconnected";
     saveWorker(w2);
 
-    expect(generateContext("stefano", "text")).toBe("");
+    expect(generateContext("sess-1", "text")).toBe("");
   });
 
   it("shows other active workers in text format", () => {
     const task = createTask("Implement JWT auth", "stefano");
 
-    const w1 = createWorker("stefano", "mac1", task.id);
+    const w1 = createWorker("stefano", "mac1", task.id, "sess-1");
     w1.status = "working";
     saveWorker(w1);
 
-    const w2 = createWorker("jimin", "mac2", task.id);
+    const w2 = createWorker("jimin", "mac2", task.id, "sess-2");
     w2.status = "working";
     w2.files_touched = [
       { path: "src/users.ts", summary: "+CRUD endpoints", updated_at: new Date().toISOString() },
     ];
     saveWorker(w2);
 
-    const result = generateContext("stefano", "text");
+    const result = generateContext("sess-1", "text");
     expect(result).toContain("[ctxflow] collaboration status:");
     expect(result).toContain("jimin");
     expect(result).toContain("Implement JWT auth");
     expect(result).toContain("src/users.ts");
-    expect(result).toContain(".ctxflow/context/stefano.md");
     expect(result).not.toContain("stefano:");
   });
 
   it("wraps in system-reminder for hook format", () => {
     const task = createTask("some task", "a");
 
-    const w1 = createWorker("stefano", "mac1", task.id);
+    const w1 = createWorker("stefano", "mac1", task.id, "sess-1");
     w1.status = "working";
     saveWorker(w1);
 
-    const w2 = createWorker("jimin", "mac2", task.id);
+    const w2 = createWorker("jimin", "mac2", task.id, "sess-2");
     w2.status = "working";
     saveWorker(w2);
 
-    const result = generateContext("stefano", "hook");
+    const result = generateContext("sess-1", "hook");
     expect(result).toMatch(/^<system-reminder>/);
     expect(result).toMatch(/<\/system-reminder>$/);
     expect(result).toContain("[ctxflow]");
@@ -79,41 +78,41 @@ describe("generateContext", () => {
   it("includes context file content in summary", () => {
     const task = createTask("Build API", "jimin");
 
-    const w1 = createWorker("stefano", "mac1", task.id);
+    const w1 = createWorker("stefano", "mac1", task.id, "sess-1");
     w1.status = "working";
     saveWorker(w1);
 
-    const w2 = createWorker("jimin", "mac2", task.id);
+    const w2 = createWorker("jimin", "mac2", task.id, "sess-2");
     w2.status = "working";
     saveWorker(w2);
 
     fs.writeFileSync(
-      contextFile("jimin"),
+      contextFile("sess-2"),
       "Using Drizzle ORM, REST pattern\nSecond line detail\nThird line",
     );
 
-    const result = generateContext("stefano", "text");
+    const result = generateContext("sess-1", "text");
     expect(result).toContain("Drizzle ORM");
   });
 
   it("shows conflict warning when files overlap", () => {
     const task = createTask("shared work", "stefano");
 
-    const w1 = createWorker("stefano", "mac1", task.id);
+    const w1 = createWorker("stefano", "mac1", task.id, "sess-1");
     w1.status = "working";
     w1.files_touched = [
       { path: "src/types.ts", summary: "+AuthUser type", updated_at: new Date().toISOString() },
     ];
     saveWorker(w1);
 
-    const w2 = createWorker("jimin", "mac2", task.id);
+    const w2 = createWorker("jimin", "mac2", task.id, "sess-2");
     w2.status = "working";
     w2.files_touched = [
       { path: "src/types.ts", summary: "+UserProfile type", updated_at: new Date().toISOString() },
     ];
     saveWorker(w2);
 
-    const result = generateContext("stefano", "text");
+    const result = generateContext("sess-1", "text");
     expect(result).toContain("conflict");
     expect(result).toContain("src/types.ts");
   });
@@ -121,7 +120,7 @@ describe("generateContext", () => {
   it("handles 5+ workers with conflict filtering", () => {
     const task = createTask("large project", "lead");
 
-    const me = createWorker("me", "mac0", task.id);
+    const me = createWorker("me", "mac0", task.id, "sess-me");
     me.status = "working";
     me.files_touched = [
       { path: "src/shared.ts", summary: "+shared", updated_at: new Date().toISOString() },
@@ -129,7 +128,7 @@ describe("generateContext", () => {
     saveWorker(me);
 
     for (let i = 1; i <= 6; i++) {
-      const w = createWorker(`worker${i}`, `mac${i}`, task.id);
+      const w = createWorker(`worker${i}`, `mac${i}`, task.id, `sess-w${i}`);
       w.status = "working";
       if (i === 1) {
         w.files_touched = [
@@ -143,7 +142,7 @@ describe("generateContext", () => {
       saveWorker(w);
     }
 
-    const result = generateContext("me", "text");
+    const result = generateContext("sess-me", "text");
     expect(result).toContain("[ctxflow] collaboration status:");
     expect(result).toContain("worker1");
     expect(result).toContain("more working");
@@ -151,15 +150,15 @@ describe("generateContext", () => {
 
   it("includes LLM instruction for context file update", () => {
     const task = createTask("some task", "a");
-    const w1 = createWorker("stefano", "mac1", task.id);
+    const w1 = createWorker("stefano", "mac1", task.id, "sess-1");
     w1.status = "working";
     saveWorker(w1);
-    const w2 = createWorker("jimin", "mac2", task.id);
+    const w2 = createWorker("jimin", "mac2", task.id, "sess-2");
     w2.status = "working";
     saveWorker(w2);
 
-    const result = generateContext("stefano", "text");
+    const result = generateContext("sess-1", "text");
     expect(result).toContain("changing your approach");
-    expect(result).toContain(".ctxflow/context/stefano.md");
+    expect(result).toContain(".ctxflow/context/sess-1.md");
   });
 });

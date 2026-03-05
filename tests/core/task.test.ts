@@ -18,6 +18,10 @@ import {
   addFileChange,
   getTaskParticipants,
   getActiveWorkers,
+  createSession,
+  getSession,
+  listSessions,
+  removeSession,
 } from "../../src/core/task.js";
 
 let tmpDir: string;
@@ -33,7 +37,6 @@ afterEach(() => {
 
 describe("Identity (me) - from git config", () => {
   it("getMe returns git user.name from a git repo", () => {
-    // Init a git repo in tmpDir with a known user name
     execSync("git init", { cwd: tmpDir, stdio: "pipe" });
     execSync('git config user.name "testuser"', { cwd: tmpDir, stdio: "pipe" });
 
@@ -41,9 +44,6 @@ describe("Identity (me) - from git config", () => {
   });
 
   it("getMe returns null when not a git repo", () => {
-    // tmpDir is not a git repo — getMe should return null
-    // (unless global git config has user.name, in which case it returns that)
-    // We test by checking it doesn't throw
     const result = getMe();
     expect(typeof result === "string" || result === null).toBe(true);
   });
@@ -90,7 +90,6 @@ describe("Task CRUD", () => {
     expect(updated).not.toBeNull();
     expect(updated!.status).toBe("done");
 
-    // Verify persistence
     const retrieved = getTask(task.id);
     expect(retrieved!.status).toBe("done");
   });
@@ -106,31 +105,33 @@ describe("Worker CRUD", () => {
   });
 
   it("createWorker creates and persists a worker", () => {
-    const worker = createWorker("stefano", "macbook", "task-1");
+    const worker = createWorker("stefano", "macbook", "task-1", "sess-abc");
     expect(worker.name).toBe("stefano");
+    expect(worker.session_id).toBe("sess-abc");
     expect(worker.machine).toBe("macbook");
     expect(worker.task_id).toBe("task-1");
     expect(worker.status).toBe("working");
     expect(worker.files_touched).toEqual([]);
 
-    const retrieved = getWorker("stefano");
+    const retrieved = getWorker("sess-abc");
     expect(retrieved).not.toBeNull();
     expect(retrieved!.name).toBe("stefano");
+    expect(retrieved!.session_id).toBe("sess-abc");
   });
 
   it("saveWorker updates existing worker", () => {
-    const worker = createWorker("stefano", "macbook", "task-1");
-    worker.status = "working";
+    const worker = createWorker("stefano", "macbook", "task-1", "sess-abc");
+    worker.status = "idle";
     saveWorker(worker);
 
-    const retrieved = getWorker("stefano");
-    expect(retrieved!.status).toBe("working");
+    const retrieved = getWorker("sess-abc");
+    expect(retrieved!.status).toBe("idle");
   });
 
   it("listWorkers returns all workers", () => {
-    createWorker("stefano", "mac1", "t1");
-    createWorker("jimin", "mac2", "t2");
-    createWorker("minho", "mac3", "t1");
+    createWorker("stefano", "mac1", "t1", "sess-1");
+    createWorker("jimin", "mac2", "t2", "sess-2");
+    createWorker("minho", "mac3", "t1", "sess-3");
 
     const workers = listWorkers();
     expect(workers).toHaveLength(3);
@@ -143,17 +144,45 @@ describe("Worker CRUD", () => {
   });
 });
 
+describe("Session CRUD", () => {
+  it("createSession creates and persists a session", () => {
+    const session = createSession("stefano", "task-1");
+    expect(session.session_id).toHaveLength(8);
+    expect(session.name).toBe("stefano");
+    expect(session.task_id).toBe("task-1");
+
+    const retrieved = getSession(session.session_id);
+    expect(retrieved).not.toBeNull();
+    expect(retrieved!.name).toBe("stefano");
+  });
+
+  it("listSessions returns all sessions", () => {
+    createSession("stefano", "t1");
+    createSession("stefano", "t2");
+    createSession("jimin", "t3");
+
+    const sessions = listSessions();
+    expect(sessions).toHaveLength(3);
+  });
+
+  it("removeSession deletes session file", () => {
+    const session = createSession("stefano", "t1");
+    expect(getSession(session.session_id)).not.toBeNull();
+
+    removeSession(session.session_id);
+    expect(getSession(session.session_id)).toBeNull();
+  });
+});
+
 describe("updateHeartbeat", () => {
   it("updates the worker heartbeat timestamp", () => {
-    const worker = createWorker("stefano", "mac", "t1");
-    const oldHeartbeat = worker.last_heartbeat;
+    createWorker("stefano", "mac", "t1", "sess-hb");
 
-    // Small delay to ensure different timestamp
     const before = Date.now();
-    updateHeartbeat("stefano");
+    updateHeartbeat("sess-hb");
     const after = Date.now();
 
-    const updated = getWorker("stefano");
+    const updated = getWorker("sess-hb");
     expect(updated).not.toBeNull();
     const heartbeatTime = new Date(updated!.last_heartbeat).getTime();
     expect(heartbeatTime).toBeGreaterThanOrEqual(before);
@@ -161,64 +190,61 @@ describe("updateHeartbeat", () => {
   });
 
   it("does nothing for non-existent worker", () => {
-    // Should not throw
     updateHeartbeat("ghost");
   });
 });
 
 describe("addFileChange", () => {
   it("adds a new file change to the worker", () => {
-    createWorker("stefano", "mac", "t1");
-    addFileChange("stefano", "src/auth.ts", "+JWT middleware");
+    createWorker("stefano", "mac", "t1", "sess-fc");
+    addFileChange("sess-fc", "src/auth.ts", "+JWT middleware");
 
-    const worker = getWorker("stefano");
+    const worker = getWorker("sess-fc");
     expect(worker!.files_touched).toHaveLength(1);
     expect(worker!.files_touched[0].path).toBe("src/auth.ts");
     expect(worker!.files_touched[0].summary).toBe("+JWT middleware");
   });
 
   it("updates existing file change instead of duplicating", () => {
-    createWorker("stefano", "mac", "t1");
-    addFileChange("stefano", "src/auth.ts", "+JWT middleware");
-    addFileChange("stefano", "src/auth.ts", "+JWT middleware with refresh");
+    createWorker("stefano", "mac", "t1", "sess-fc2");
+    addFileChange("sess-fc2", "src/auth.ts", "+JWT middleware");
+    addFileChange("sess-fc2", "src/auth.ts", "+JWT middleware with refresh");
 
-    const worker = getWorker("stefano");
+    const worker = getWorker("sess-fc2");
     expect(worker!.files_touched).toHaveLength(1);
     expect(worker!.files_touched[0].summary).toBe("+JWT middleware with refresh");
   });
 
   it("tracks multiple files", () => {
-    createWorker("stefano", "mac", "t1");
-    addFileChange("stefano", "src/auth.ts", "+JWT");
-    addFileChange("stefano", "src/types.ts", "+AuthUser type");
-    addFileChange("stefano", "src/routes.ts", "+auth routes");
+    createWorker("stefano", "mac", "t1", "sess-fc3");
+    addFileChange("sess-fc3", "src/auth.ts", "+JWT");
+    addFileChange("sess-fc3", "src/types.ts", "+AuthUser type");
+    addFileChange("sess-fc3", "src/routes.ts", "+auth routes");
 
-    const worker = getWorker("stefano");
+    const worker = getWorker("sess-fc3");
     expect(worker!.files_touched).toHaveLength(3);
   });
 
   it("does nothing for non-existent worker", () => {
     addFileChange("ghost", "src/a.ts", "+something");
-    // Should not throw
   });
 
   it("prunes old entries when exceeding limit", () => {
-    createWorker("stefano", "mac", "t1");
+    createWorker("stefano", "mac", "t1", "sess-prune");
     for (let i = 0; i < 60; i++) {
-      addFileChange("stefano", `src/file${i}.ts`, `+file${i}`);
+      addFileChange("sess-prune", `src/file${i}.ts`, `+file${i}`);
     }
-    const worker = getWorker("stefano");
+    const worker = getWorker("sess-prune");
     expect(worker!.files_touched.length).toBeLessThanOrEqual(50);
-    // Most recent files should be preserved
     expect(worker!.files_touched[worker!.files_touched.length - 1].path).toBe("src/file59.ts");
   });
 });
 
 describe("getTaskParticipants", () => {
   it("returns workers participating in a given task", () => {
-    createWorker("stefano", "mac1", "task-abc");
-    createWorker("jimin", "mac2", "task-abc");
-    createWorker("minho", "mac3", "task-xyz");
+    createWorker("stefano", "mac1", "task-abc", "sess-p1");
+    createWorker("jimin", "mac2", "task-abc", "sess-p2");
+    createWorker("minho", "mac3", "task-xyz", "sess-p3");
 
     const participants = getTaskParticipants("task-abc");
     expect(participants).toHaveLength(2);
@@ -227,22 +253,22 @@ describe("getTaskParticipants", () => {
   });
 
   it("returns empty array when no participants", () => {
-    createWorker("stefano", "mac1", "task-abc");
+    createWorker("stefano", "mac1", "task-abc", "sess-px");
     expect(getTaskParticipants("task-none")).toEqual([]);
   });
 });
 
 describe("getActiveWorkers", () => {
   it("returns workers with working or idle status", () => {
-    const w1 = createWorker("stefano", "mac1", "t1");
+    const w1 = createWorker("stefano", "mac1", "t1", "sess-a1");
     w1.status = "working";
     saveWorker(w1);
 
-    const w2 = createWorker("jimin", "mac2", "t1");
+    const w2 = createWorker("jimin", "mac2", "t1", "sess-a2");
     w2.status = "idle";
     saveWorker(w2);
 
-    const w3 = createWorker("minho", "mac3", "t1");
+    const w3 = createWorker("minho", "mac3", "t1", "sess-a3");
     w3.status = "disconnected";
     saveWorker(w3);
 

@@ -21,6 +21,7 @@ export type FileChange = z.infer<typeof FileChangeSchema>;
 // --- Worker Schema ---
 export const WorkerSchema = z.object({
   name: z.string(),
+  session_id: z.string(),
   machine: z.string(),
   task_id: z.string().nullable(),
   joined_at: z.string().datetime(),
@@ -29,6 +30,16 @@ export const WorkerSchema = z.object({
   files_touched: z.array(FileChangeSchema),
 });
 export type Worker = z.infer<typeof WorkerSchema>;
+
+// --- Session Schema ---
+export const SessionSchema = z.object({
+  session_id: z.string(),
+  name: z.string(),
+  task_id: z.string(),
+  daemon_pid: z.number().nullable(),
+  created_at: z.string().datetime(),
+});
+export type Session = z.infer<typeof SessionSchema>;
 
 // --- Conflict ---
 export interface Conflict {

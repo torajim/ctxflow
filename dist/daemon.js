@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { getMe, listWorkers, saveWorker, updateHeartbeat } from "./core/task.js";
+import { getCurrentSessionId, getSession, listWorkers, saveWorker, updateHeartbeat, } from "./core/task.js";
 import { hasGitRemote, ensureCtxflowBranch, fullSync } from "./core/sync.js";
 import { daemonPidFile } from "./core/paths.js";
 import { logDebug } from "./core/log.js";
@@ -24,20 +24,27 @@ function markInactiveWorkers() {
         if ((worker.status === "working" || worker.status === "idle") &&
             now - new Date(worker.last_heartbeat).getTime() > INACTIVE_THRESHOLD_MS) {
             saveWorker({ ...worker, status: "disconnected" });
-            logDebug(`marked ${worker.name} as disconnected (heartbeat timeout)`);
+            logDebug(`marked ${worker.name} (${worker.session_id}) as disconnected (heartbeat timeout)`);
         }
     }
 }
 async function syncLoop() {
     try {
-        const me = getMe();
-        if (!me)
+        const sessionId = getCurrentSessionId();
+        if (!sessionId) {
+            logDebug("no CTXFLOW_SESSION env var, skipping sync");
             return;
-        updateHeartbeat(me);
+        }
+        const session = getSession(sessionId);
+        if (!session) {
+            logDebug(`session ${sessionId} not found, skipping sync`);
+            return;
+        }
+        updateHeartbeat(sessionId);
         if (!(await hasGitRemote()))
             return;
         await ensureCtxflowBranch();
-        await fullSync(me);
+        await fullSync(sessionId);
         markInactiveWorkers();
     }
     catch (err) {
@@ -85,7 +92,8 @@ export async function runDaemon() {
     writePid();
     process.on("SIGTERM", gracefulShutdown);
     process.on("SIGINT", gracefulShutdown);
-    logDebug("Daemon started (pid " + process.pid + ")");
+    const sessionId = getCurrentSessionId();
+    logDebug(`Daemon started (pid ${process.pid}, session ${sessionId ?? "none"})`);
     // Run once immediately, then on interval
     await syncLoop();
     intervalHandle = setInterval(() => {

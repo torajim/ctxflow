@@ -89,13 +89,13 @@ export async function ensureCtxflowBranch() {
         }
     }
 }
-export async function syncPush(workerName, maxRetries = 3) {
+export async function syncPush(sessionId, maxRetries = 3) {
     await ensureCtxflowBranch();
     const git = syncGit();
-    // Stage only this worker's files
+    // Stage only this worker's files (keyed by session ID)
     const filesToStage = [
-        `workers/${workerName}.json`,
-        `context/${workerName}.md`,
+        `workers/${sessionId}.json`,
+        `context/${sessionId}.md`,
     ];
     // Also stage any task files
     const tasksPath = path.join(ctxflowDir(), "tasks");
@@ -118,7 +118,7 @@ export async function syncPush(workerName, maxRetries = 3) {
     const status = await git.status();
     if (status.staged.length === 0)
         return;
-    await git.commit(`sync: ${workerName} @ ${new Date().toISOString()}`);
+    await git.commit(`sync: ${sessionId} @ ${new Date().toISOString()}`);
     // Push with retry (use sync repo's remote check)
     if (!(await hasSyncRemote()))
         return;
@@ -168,8 +168,8 @@ export async function syncPull() {
         logDebug(`syncPull fetch failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 }
-export async function fullSync(workerName) {
-    await syncPush(workerName);
+export async function fullSync(sessionId) {
+    await syncPush(sessionId);
     await syncPull();
 }
 //# sourceMappingURL=sync.js.map

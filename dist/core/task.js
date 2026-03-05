@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import { nanoid } from "nanoid";
-import { TaskSchema, WorkerSchema, } from "./schema.js";
-import { taskFile, tasksDir, workerFile, workersDir, ensureDirs, getProjectRoot, } from "./paths.js";
+import { TaskSchema, WorkerSchema, SessionSchema, } from "./schema.js";
+import { taskFile, tasksDir, workerFile, workersDir, sessionFile, sessionsDir, ensureDirs, getProjectRoot, } from "./paths.js";
 const MAX_FILES_TOUCHED = 50;
 // --- Atomic file write ---
 function writeFileAtomic(filePath, data) {
@@ -23,6 +23,72 @@ export function getMe() {
     catch {
         return null;
     }
+}
+// --- Sessions ---
+export function createSession(name, taskId, daemonPid = null) {
+    ensureDirs();
+    const sessionId = nanoid(8);
+    const session = {
+        session_id: sessionId,
+        name,
+        task_id: taskId,
+        daemon_pid: daemonPid,
+        created_at: new Date().toISOString(),
+    };
+    writeFileAtomic(sessionFile(sessionId), JSON.stringify(session, null, 2));
+    return session;
+}
+export function getSession(sessionId) {
+    try {
+        const raw = JSON.parse(fs.readFileSync(sessionFile(sessionId), "utf-8"));
+        return SessionSchema.parse(raw);
+    }
+    catch {
+        return null;
+    }
+}
+export function updateSessionDaemonPid(sessionId, pid) {
+    const session = getSession(sessionId);
+    if (!session)
+        return;
+    session.daemon_pid = pid;
+    writeFileAtomic(sessionFile(sessionId), JSON.stringify(session, null, 2));
+}
+export function listSessions() {
+    try {
+        const files = fs.readdirSync(sessionsDir()).filter((f) => f.endsWith(".json"));
+        return files
+            .map((f) => {
+            try {
+                const raw = JSON.parse(fs.readFileSync(`${sessionsDir()}/${f}`, "utf-8"));
+                return SessionSchema.parse(raw);
+            }
+            catch {
+                return null;
+            }
+        })
+            .filter((s) => s !== null);
+    }
+    catch {
+        return [];
+    }
+}
+export function removeSession(sessionId) {
+    try {
+        fs.unlinkSync(sessionFile(sessionId));
+    }
+    catch {
+        // Already removed
+    }
+}
+export function getCurrentSessionId() {
+    return process.env.CTXFLOW_SESSION ?? null;
+}
+export function getCurrentSession() {
+    const sessionId = getCurrentSessionId();
+    if (!sessionId)
+        return null;
+    return getSession(sessionId);
 }
 // --- Tasks ---
 export function createTask(description, createdBy) {
@@ -74,9 +140,9 @@ export function updateTaskStatus(id, status) {
     return task;
 }
 // --- Workers ---
-export function getWorker(name) {
+export function getWorker(sessionId) {
     try {
-        const raw = JSON.parse(fs.readFileSync(workerFile(name), "utf-8"));
+        const raw = JSON.parse(fs.readFileSync(workerFile(sessionId), "utf-8"));
         return WorkerSchema.parse(raw);
     }
     catch {
@@ -106,12 +172,13 @@ export function listWorkers() {
 }
 export function saveWorker(worker) {
     ensureDirs();
-    writeFileAtomic(workerFile(worker.name), JSON.stringify(worker, null, 2));
+    writeFileAtomic(workerFile(worker.session_id), JSON.stringify(worker, null, 2));
 }
-export function createWorker(name, machine, taskId) {
+export function createWorker(name, machine, taskId, sessionId) {
     const now = new Date().toISOString();
     const worker = {
         name,
+        session_id: sessionId,
         machine,
         task_id: taskId,
         joined_at: now,
@@ -122,15 +189,15 @@ export function createWorker(name, machine, taskId) {
     saveWorker(worker);
     return worker;
 }
-export function updateHeartbeat(name) {
-    const worker = getWorker(name);
+export function updateHeartbeat(sessionId) {
+    const worker = getWorker(sessionId);
     if (!worker)
         return;
     worker.last_heartbeat = new Date().toISOString();
     saveWorker(worker);
 }
-export function addFileChange(workerName, filePath, summary) {
-    const worker = getWorker(workerName);
+export function addFileChange(sessionId, filePath, summary) {
+    const worker = getWorker(sessionId);
     if (!worker)
         return;
     const existing = worker.files_touched.find((f) => f.path === filePath);

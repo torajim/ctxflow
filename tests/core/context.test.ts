@@ -58,7 +58,7 @@ describe("generateContext", () => {
     expect(result).not.toContain("stefano:");
   });
 
-  it("wraps in system-reminder for hook format", () => {
+  it("outputs raw text for hook format (Claude Code wraps it)", () => {
     const task = createTask("some task", "a");
 
     const w1 = createWorker("stefano", "mac1", task.id, "sess-1");
@@ -70,8 +70,7 @@ describe("generateContext", () => {
     saveWorker(w2);
 
     const result = generateContext("sess-1", "hook");
-    expect(result).toMatch(/^<system-reminder>/);
-    expect(result).toMatch(/<\/system-reminder>$/);
+    expect(result).not.toMatch(/^<system-reminder>/);
     expect(result).toContain("[ctxflow]");
   });
 

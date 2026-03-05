@@ -193,14 +193,13 @@ describe("Multi-session simulation: same user, two terminals", () => {
     w2.status = "working";
     saveWorker(w2);
 
-    // Hook format includes system-reminder tags
+    // Hook format outputs raw text (Claude Code wraps in system-reminder)
     const hook1 = generateContext(session1.session_id, "hook");
-    expect(hook1).toMatch(/^<system-reminder>/);
-    expect(hook1).toMatch(/<\/system-reminder>$/);
+    expect(hook1).not.toMatch(/^<system-reminder>/);
     expect(hook1).toContain("Dashboard");
 
     const hook2 = generateContext(session2.session_id, "hook");
-    expect(hook2).toMatch(/^<system-reminder>/);
+    expect(hook2).not.toMatch(/^<system-reminder>/);
     expect(hook2).toContain("Auth");
   });
 

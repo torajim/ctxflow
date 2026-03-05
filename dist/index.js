@@ -207,7 +207,11 @@ program
     try {
         ensureDirs();
         let sessionId = opts.session ?? getCurrentSessionId();
-        // If no session specified, try to find one for this user
+        // Validate the session actually has a worker; if not, fall back to name-based lookup
+        if (sessionId && !getWorker(sessionId)) {
+            sessionId = null;
+        }
+        // If no valid session, try to find one for this user
         if (!sessionId) {
             const me = getMe();
             if (!me) {
@@ -252,7 +256,7 @@ program
         saveWorker(worker);
         // Remove session
         removeSession(sessionId);
-        clearCurrentSession();
+        clearCurrentSession(sessionId);
         // Stop daemon if no other local sessions active
         stopDaemonIfIdle();
         console.log(chalk.yellow(`\nSession ${sessionId} stopped.\n`));

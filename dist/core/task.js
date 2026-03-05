@@ -103,12 +103,15 @@ export function getCurrentSessionId() {
 export function writeCurrentSession(sessionId) {
     safeWriteFile(currentSessionFile(), ctxflowDir(), sessionId);
 }
-export function clearCurrentSession() {
+export function clearCurrentSession(sessionId) {
     try {
-        fs.unlinkSync(currentSessionFile());
+        const current = fs.readFileSync(currentSessionFile(), "utf-8").trim();
+        if (current === sessionId) {
+            fs.unlinkSync(currentSessionFile());
+        }
     }
     catch {
-        // Already removed
+        // Already removed or unreadable
     }
 }
 export function getCurrentSession() {

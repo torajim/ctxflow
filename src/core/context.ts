@@ -165,9 +165,5 @@ export function generateContext(
 
   const body = sections.join("\n");
 
-  if (format === "hook") {
-    return `<system-reminder>\n${body}\n</system-reminder>`;
-  }
-
   return body;
 }

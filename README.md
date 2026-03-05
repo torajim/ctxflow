@@ -175,6 +175,8 @@ ctxflow stop --session <session-id>
 
 A fully reproducible demo you can run locally with two terminals. No external server needed — we use a local bare git repo as the remote.
 
+> **Note:** When running multiple terminals on the **same machine with the same user**, each terminal must set `CTXFLOW_SESSION` env var to identify its session. For single-terminal use (or running ctxflow from within Claude Code), the session is auto-detected from `.ctxflow/current-session`.
+
 ### Setup
 
 ```bash
@@ -197,9 +199,10 @@ cd /tmp/ctxflow-demo
 ctxflow start "Build a shared Todo utility library"
 ```
 
-ctxflow auto-saves the session. Just launch Claude Code:
+ctxflow prints a session ID. Copy it:
 
 ```bash
+export CTXFLOW_SESSION=<session-id-from-output>
 claude
 ```
 
@@ -219,23 +222,13 @@ Open a **new terminal**:
 
 ```bash
 cd /tmp/ctxflow-demo
-ctxflow
+ctxflow                  # select the active task from the list
 ```
 
-```
-ctxflow - collaboration status
-
-Active tasks:
-  [1] Build a shared Todo utility library (a1b2c3)
-      workerA (working, just now)
-  [N] Create a new task
-
-Select a task to join, or N to create new: 1
-```
-
-Session is auto-saved. Launch Claude Code:
+Copy the session ID:
 
 ```bash
+export CTXFLOW_SESSION=<session-id-from-output>
 claude
 ```
 
@@ -249,12 +242,14 @@ Create a Todo formatter in TypeScript:
 
 ### What you'll see
 
-**Context sharing** — Before Worker B's Claude writes any code, it receives a system reminder:
+These messages are injected into **Claude's context** via hooks — Claude (the LLM) sees them automatically before every tool use. You can verify by running `ctxflow context --format hook` manually.
+
+**Context sharing** — When Worker B's Claude uses any tool, it receives:
 
 ```
 [ctxflow] collaboration status:
 - workerA: "Build a shared Todo utility library"
-  recent: src/types.ts (+Todo interface), src/store.ts (+TodoStore class)
+  recent: src/types.ts (+modified types.ts), src/store.ts (+modified store.ts)
 
 [ctxflow] When making key architectural decisions or changing your approach,
 please update .ctxflow/context/<session-id>.md with a brief summary.
@@ -262,15 +257,20 @@ please update .ctxflow/context/<session-id>.md with a brief summary.
 
 Worker B's Claude knows that `src/types.ts` already exists with a `Todo` interface, and can reuse it instead of redefining it.
 
-**Conflict detection** — Both workers touch `src/types.ts`. ctxflow detects this and warns:
+**Conflict detection** — When both workers touch `src/types.ts`, ctxflow warns:
 
 ```
-⚠ conflict: src/types.ts (workerA, workerB)
+[ctxflow] collaboration status:
+- workerB: "Build a shared Todo utility library"
+  recent: src/types.ts (+modified types.ts), src/formatter.ts (+modified formatter.ts)
+  ⚠ conflict: src/types.ts (workerA, workerB)
 ```
 
 This is the core value: without ctxflow, Worker B's Claude would blindly overwrite or duplicate the interface. With ctxflow, it sees the overlap and coordinates.
 
 ### Check status
+
+You can run this from any terminal, or ask Claude to run it via the Bash tool:
 
 ```bash
 ctxflow status
@@ -288,8 +288,8 @@ ctxflow status
 ### Cleanup
 
 ```bash
-# Stop sessions (run in each terminal)
-ctxflow stop
+# Stop sessions (in each terminal, or specify --session)
+ctxflow stop --session <session-id>
 
 # Remove stale data
 ctxflow cleanup

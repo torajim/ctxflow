@@ -7,7 +7,7 @@ export declare function listSessions(): Session[];
 export declare function removeSession(sessionId: string): void;
 export declare function getCurrentSessionId(): string | null;
 export declare function writeCurrentSession(sessionId: string): void;
-export declare function clearCurrentSession(): void;
+export declare function clearCurrentSession(sessionId: string): void;
 export declare function getCurrentSession(): Session | null;
 export declare function createTask(description: string, createdBy: string): Task;
 export declare function getTask(id: string): Task | null;

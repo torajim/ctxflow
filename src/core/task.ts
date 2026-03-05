@@ -132,11 +132,14 @@ export function writeCurrentSession(sessionId: string): void {
   safeWriteFile(currentSessionFile(), ctxflowDir(), sessionId);
 }
 
-export function clearCurrentSession(): void {
+export function clearCurrentSession(sessionId: string): void {
   try {
-    fs.unlinkSync(currentSessionFile());
+    const current = fs.readFileSync(currentSessionFile(), "utf-8").trim();
+    if (current === sessionId) {
+      fs.unlinkSync(currentSessionFile());
+    }
   } catch {
-    // Already removed
+    // Already removed or unreadable
   }
 }
 

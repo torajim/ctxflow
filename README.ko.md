@@ -175,6 +175,8 @@ ctxflow stop --session <session-id>
 
 로컬에서 두 터미널로 바로 따라할 수 있는 완전한 데모입니다. 외부 서버 없이 로컬 bare git repo를 remote로 사용합니다.
 
+> **참고:** **같은 머신, 같은 사용자**로 여러 터미널을 사용할 때는 각 터미널에서 `CTXFLOW_SESSION` 환경변수를 설정해야 세션을 구분할 수 있습니다. 단일 터미널 또는 Claude Code 안에서 ctxflow를 실행하는 경우에는 `.ctxflow/current-session` 파일에서 자동 감지됩니다.
+
 ### 준비
 
 ```bash
@@ -197,9 +199,10 @@ cd /tmp/ctxflow-demo
 ctxflow start "Todo 유틸리티 라이브러리 만들기"
 ```
 
-세션이 자동 저장됩니다. Claude Code를 바로 실행합니다:
+ctxflow가 세션 ID를 출력합니다. 복사해서 환경변수로 설정합니다:
 
 ```bash
+export CTXFLOW_SESSION=<출력된-session-id>
 claude
 ```
 
@@ -219,23 +222,13 @@ Claude가 두 파일을 모두 생성할 때까지 기다립니다.
 
 ```bash
 cd /tmp/ctxflow-demo
-ctxflow
+ctxflow                  # 활성 작업 목록에서 선택
 ```
 
-```
-ctxflow - collaboration status
-
-Active tasks:
-  [1] Todo 유틸리티 라이브러리 만들기 (a1b2c3)
-      workerA (working, 방금 전)
-  [N] Create a new task
-
-Select a task to join, or N to create new: 1
-```
-
-세션이 자동 저장됩니다. Claude Code를 실행합니다:
+세션 ID를 복사해서 환경변수로 설정합니다:
 
 ```bash
+export CTXFLOW_SESSION=<출력된-session-id>
 claude
 ```
 
@@ -249,12 +242,14 @@ Todo 포맷터를 TypeScript로 만들어줘:
 
 ### 확인할 수 있는 것
 
-**컨텍스트 공유** — Worker B의 Claude가 코드를 작성하기 전, 시스템 리마인더를 받습니다:
+아래 메시지들은 hook을 통해 **Claude(LLM)의 컨텍스트에 자동 주입**됩니다. 매 도구 사용 전에 주입되어 Claude가 협업 상황을 파악합니다. `ctxflow context --format hook` 명령어로 직접 확인할 수도 있습니다.
+
+**컨텍스트 공유** — Worker B의 Claude가 도구를 사용할 때 자동으로 받는 내용:
 
 ```
 [ctxflow] collaboration status:
 - workerA: "Todo 유틸리티 라이브러리 만들기"
-  recent: src/types.ts (+Todo interface), src/store.ts (+TodoStore class)
+  recent: src/types.ts (+modified types.ts), src/store.ts (+modified store.ts)
 
 [ctxflow] When making key architectural decisions or changing your approach,
 please update .ctxflow/context/<session-id>.md with a brief summary.
@@ -262,15 +257,20 @@ please update .ctxflow/context/<session-id>.md with a brief summary.
 
 Worker B의 Claude는 `src/types.ts`에 이미 `Todo` 인터페이스가 있다는 것을 알고, 중복 정의 없이 기존 것을 재사용할 수 있습니다.
 
-**충돌 감지** — 두 워커가 `src/types.ts`를 수정합니다. ctxflow가 이를 감지하고 경고합니다:
+**충돌 감지** — 두 워커가 `src/types.ts`를 수정하면 ctxflow가 경고합니다:
 
 ```
-⚠ conflict: src/types.ts (workerA, workerB)
+[ctxflow] collaboration status:
+- workerB: "Todo 유틸리티 라이브러리 만들기"
+  recent: src/types.ts (+modified types.ts), src/formatter.ts (+modified formatter.ts)
+  ⚠ conflict: src/types.ts (workerA, workerB)
 ```
 
 이것이 핵심 가치입니다: ctxflow 없이는 Worker B의 Claude가 인터페이스를 모르고 덮어쓰거나 중복 정의할 수 있습니다. ctxflow가 있으면 겹침을 감지하고 조율합니다.
 
 ### 상태 확인
+
+아무 터미널에서 실행하거나, Claude에게 Bash 도구로 실행을 요청할 수 있습니다:
 
 ```bash
 ctxflow status
@@ -288,8 +288,8 @@ ctxflow status
 ### 정리
 
 ```bash
-# 각 터미널에서 세션 종료
-ctxflow stop
+# 각 터미널에서 세션 종료 (--session으로 지정)
+ctxflow stop --session <session-id>
 
 # 잔여 데이터 정리
 ctxflow cleanup

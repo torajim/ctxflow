@@ -175,8 +175,6 @@ ctxflow stop --session <session-id>
 
 A fully reproducible demo you can run locally with two terminals. No external server needed — we use a local bare git repo as the remote.
 
-> **Note:** When running multiple terminals on the **same machine with the same user**, each terminal must set `CTXFLOW_SESSION` env var to identify its session. For single-terminal use (or running ctxflow from within Claude Code), the session is auto-detected from `.ctxflow/current-session`.
-
 ### Setup
 
 ```bash
@@ -192,17 +190,17 @@ git add README.md && git commit -m "init"
 git push -u origin main
 ```
 
-### Terminal 1 — Worker A
+### Terminal 1 — Stefano
 
 ```bash
 cd /tmp/ctxflow-demo
+git config user.name "stefano"
 ctxflow start "Build a shared Todo utility library"
 ```
 
-ctxflow prints a session ID. Copy it:
+ctxflow auto-saves the session. Launch Claude Code:
 
 ```bash
-export CTXFLOW_SESSION=<session-id-from-output>
 claude
 ```
 
@@ -216,19 +214,19 @@ Create a simple Todo utility in TypeScript (plain .ts files, no dependencies):
 
 Wait for Claude to finish creating both files.
 
-### Terminal 2 — Worker B
+### Terminal 2 — Jimin
 
 Open a **new terminal**:
 
 ```bash
 cd /tmp/ctxflow-demo
-ctxflow                  # select the active task from the list
+git config user.name "jimin"
+ctxflow
 ```
 
-Copy the session ID:
+ctxflow auto-saves the session. Launch Claude Code:
 
 ```bash
-export CTXFLOW_SESSION=<session-id-from-output>
 claude
 ```
 
@@ -242,13 +240,17 @@ Create a Todo formatter in TypeScript:
 
 ### What you'll see
 
-These messages are injected into **Claude's context** via hooks — Claude (the LLM) sees them automatically before every tool use. You can verify by running `ctxflow context --format hook` manually.
+These messages are injected into **Claude's context** via hooks — Claude (the LLM) sees them automatically before every tool use. To see what's being injected right now, run this in any terminal (or ask Claude to run it via Bash):
+
+```bash
+ctxflow context --format hook
+```
 
 **Context sharing** — When Worker B's Claude uses any tool, it receives:
 
 ```
 [ctxflow] collaboration status:
-- workerA: "Build a shared Todo utility library"
+- stefano: "Build a shared Todo utility library"
   recent: src/types.ts (+modified types.ts), src/store.ts (+modified store.ts)
 
 [ctxflow] When making key architectural decisions or changing your approach,
@@ -261,9 +263,9 @@ Worker B's Claude knows that `src/types.ts` already exists with a `Todo` interfa
 
 ```
 [ctxflow] collaboration status:
-- workerB: "Build a shared Todo utility library"
+- jimin: "Build a shared Todo utility library"
   recent: src/types.ts (+modified types.ts), src/formatter.ts (+modified formatter.ts)
-  ⚠ conflict: src/types.ts (workerA, workerB)
+  ⚠ conflict: src/types.ts (stefano, jimin)
 ```
 
 This is the core value: without ctxflow, Worker B's Claude would blindly overwrite or duplicate the interface. With ctxflow, it sees the overlap and coordinates.
@@ -281,8 +283,8 @@ ctxflow status
 
   Daemon: running
   Sessions: 2
-    <session-A> - working - "Build a shared Todo utility library"
-    <session-B> - working - "Build a shared Todo utility library"
+    <session-A> (stefano) - working - "Build a shared Todo utility library"
+    <session-B> (jimin) - working - "Build a shared Todo utility library"
 ```
 
 ### Cleanup

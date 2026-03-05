@@ -193,7 +193,8 @@ program
             const worker = getWorker(s.session_id);
             const status = worker?.status ?? "unknown";
             const statusColor = status === "working" ? chalk.green : status === "idle" ? chalk.yellow : chalk.red;
-            console.log(`    ${s.session_id} - ${statusColor(status)} - "${task?.description ?? s.task_id}"`);
+            const name = worker?.name ?? s.name;
+            console.log(`    ${s.session_id} (${name}) - ${statusColor(status)} - "${task?.description ?? s.task_id}"`);
         }
         console.log();
     }
@@ -259,7 +260,7 @@ program
         clearCurrentSession(sessionId);
         // Stop daemon if no other local sessions active
         stopDaemonIfIdle();
-        console.log(chalk.yellow(`\nSession ${sessionId} stopped.\n`));
+        console.log(chalk.yellow(`\nSession ${sessionId} (${worker.name}) stopped.\n`));
     }
     catch (err) {
         console.error(chalk.red(`Error: ${err instanceof Error ? err.message : String(err)}`));

@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="README.ko.md">한국어</a>
+  <a href="README.ko.md">한국어</a> · <a href="LICENSE">MIT License</a>
 </p>
 
 ---
@@ -24,7 +24,8 @@ When multiple developers vibe-code on the same project with LLM assistants, each
 - **Local-first.** Works offline, syncs when network is available.
 - **No merge conflicts by design.** Each worker writes only to their own files (keyed by session ID) — structural conflict elimination.
 - **Adaptive context injection.** Summaries when things are calm, detailed warnings when file overlaps are detected.
-- **Background daemon.** 5-second sync loop with heartbeat, invisible to the user.
+- **Background daemon.** Configurable sync loop (default 5s) with heartbeat, invisible to the user.
+- **Security hardened.** Path traversal protection, input size limits, atomic file operations, and lock staleness detection.
 
 ## How It Works
 
@@ -107,7 +108,7 @@ claude
 From now on, every time Claude uses a tool, it automatically receives context about what your teammates are doing:
 
 ```
-[ctxflow] Collaboration status:
+[ctxflow] collaboration status:
 - jimin: "User profile API" | Using Drizzle ORM, building REST endpoints
   recent: src/api/users.ts (+CRUD endpoints), src/db/schema.ts (+users table)
 
@@ -169,7 +170,135 @@ If you have multiple active sessions, specify which one:
 ctxflow stop --session <session-id>
 ```
 
-### Project Structure
+## Demo Walkthrough
+
+Below is a step-by-step example of running ctxflow locally with two terminals to simulate a collaborative session.
+
+### Setup
+
+```bash
+# Terminal shared: create a test project
+mkdir /tmp/demo-project && cd /tmp/demo-project
+git init && git remote add origin git@github.com:youruser/demo-project.git
+```
+
+### Terminal 1 — Worker A (Stefano)
+
+```bash
+cd /tmp/demo-project
+ctxflow start "Build user authentication"
+```
+
+```
+Task started: Build user authentication
+Task ID: a1b2c3d4e5
+Session: xK9mQ2pL
+Worker: stefano
+
+To enable session tracking in Claude Code, run:
+  export CTXFLOW_SESSION=xK9mQ2pL
+Then start Claude Code:
+  claude
+```
+
+```bash
+export CTXFLOW_SESSION=xK9mQ2pL
+claude
+# Claude is now working... edits src/auth/login.ts, src/auth/middleware.ts
+```
+
+### Terminal 2 — Worker B (Jimin)
+
+```bash
+cd /tmp/demo-project
+ctxflow
+```
+
+```
+ctxflow - collaboration status
+
+Active tasks:
+  [1] Build user authentication (a1b2c3d4e5)
+      stefano (working, just now)
+  [N] Create a new task
+
+Select a task to join, or N to create new: 1
+```
+
+```
+Joined task: Build user authentication
+Task ID: a1b2c3d4e5
+Session: pR7nW4kJ
+Worker: jimin
+
+To enable session tracking in Claude Code, run:
+  export CTXFLOW_SESSION=pR7nW4kJ
+Then start Claude Code:
+  claude
+```
+
+```bash
+export CTXFLOW_SESSION=pR7nW4kJ
+claude
+# Jimin's Claude now automatically sees Stefano's context:
+```
+
+```
+[ctxflow] collaboration status:
+- stefano: "Build user authentication" | JWT-based auth with bcrypt
+  recent: src/auth/login.ts (+login endpoint), src/auth/middleware.ts (+JWT verify)
+
+[ctxflow] When making key architectural decisions or changing your approach,
+please update .ctxflow/context/pR7nW4kJ.md with a brief summary.
+```
+
+### Conflict detected
+
+When Jimin's Claude edits a file Stefano already touched:
+
+```
+[ctxflow] collaboration status:
+- stefano: "Build user authentication" | JWT-based auth
+  recent: src/auth/login.ts (+login endpoint), src/types/index.ts (+AuthUser type)
+
+  ⚠ conflict: src/types/index.ts (stefano, jimin)
+
+[ctxflow] When making key architectural decisions or changing your approach,
+please update .ctxflow/context/pR7nW4kJ.md with a brief summary.
+```
+
+### Check status
+
+```bash
+ctxflow status
+```
+
+```
+ctxflow status
+
+  Daemon: running
+  Sessions: 2
+    xK9mQ2pL - working - "Build user authentication"
+    pR7nW4kJ - working - "Build user authentication"
+```
+
+### Finish up
+
+```bash
+# Terminal 1
+ctxflow stop --session xK9mQ2pL
+# Session xK9mQ2pL stopped.
+
+# Terminal 2
+ctxflow stop --session pR7nW4kJ
+# Session pR7nW4kJ stopped.
+
+# Clean up stale data
+ctxflow cleanup
+# Cleaned up 2 stale entries.
+```
+
+## Project Structure
 
 ```
 .ctxflow/                          # auto-created, gitignored
@@ -181,8 +310,11 @@ ctxflow stop --session <session-id>
 │   └── {session-id}.json          # session-to-task mapping
 ├── context/
 │   └── {session-id}.md            # approach notes (written by LLM)
+├── locks/
+│   └── {name}.lock/               # atomic directory-based locks
 ├── .sync/                         # git repo for orphan branch sync
 ├── daemon.pid                     # background daemon PID
+├── daemon.lock/                   # daemon singleton lock
 └── debug.log                      # daemon debug log
 ```
 
@@ -194,8 +326,10 @@ ctxflow stop --session <session-id>
 | `ctxflow start <description>` | Create a new task and begin working |
 | `ctxflow join <task-id>` | Join an existing active task |
 | `ctxflow list` | List all active tasks and participants |
+| `ctxflow status` | Show daemon and session status |
 | `ctxflow stop` | Stop your current task |
 | `ctxflow stop --session <id>` | Stop a specific session |
+| `ctxflow cleanup` | Remove disconnected workers and done tasks |
 
 ### Internal commands (used by hooks)
 
@@ -211,13 +345,29 @@ ctxflow stop --session <session-id>
 |----------|-------------|
 | `CTXFLOW_SESSION` | Current session ID. Set this before launching Claude Code so hooks can identify your session. |
 
+### Configuration
+
+Create an optional `ctxflow.config.json` in your project root to override defaults:
+
+```json
+{
+  "syncIntervalMs": 5000,
+  "inactiveThresholdMs": 60000,
+  "maxFilesTouched": 50,
+  "pushMaxRetries": 3,
+  "pushRetryBaseMs": 500
+}
+```
+
+Changes are picked up automatically without restarting the daemon.
+
 ## How Sync Works
 
 ctxflow uses a **git orphan branch** named `ctxflow` as its sync channel:
 
 1. The branch contains only `.ctxflow/` state files (no source code)
 2. Each worker writes only to their own files (`workers/{session-id}.json`, `context/{session-id}.md`)
-3. A background daemon pushes/pulls every 5 seconds
+3. A background daemon pushes/pulls at a configurable interval (default 5s)
 4. Since files never overlap, `git rebase` always succeeds cleanly
 
 This means **N workers can sync simultaneously with zero merge conflicts**.
@@ -230,6 +380,19 @@ This means **N workers can sync simultaneously with zero merge conflicts**.
 | Long offline | Local work continues, others see you as "disconnected" | Catch-up sync on reconnect |
 | Daemon crash | `ctxflow start` auto-restarts it | Automatic |
 | Worker crash | Heartbeat timeout (60s) → marked disconnected | Automatic |
+| No sessions left | Daemon auto-shuts down | Automatic |
+| Stale locks | Detected by PID + timestamp (120s threshold) | Automatic |
+
+## Security
+
+ctxflow includes several hardening measures:
+
+- **Path traversal protection.** File paths are validated with `path.relative()` to prevent escaping the project root.
+- **Input size limits.** Stdin input is capped at 1 MB with incremental checking to prevent memory exhaustion.
+- **Atomic file operations.** All state files are written via tmp + rename to prevent corruption.
+- **Lock staleness detection.** Locks store PID + timestamp; stale locks from dead or recycled processes are automatically reclaimed.
+- **ID sanitization.** All task/session IDs are validated against `[\w-]+` with a 128-character limit.
+- **Error boundaries.** All CLI commands are wrapped in try-catch to prevent unhandled crashes.
 
 ## Development
 
@@ -242,4 +405,6 @@ npm run dev          # watch mode
 
 ## License
 
-MIT
+This project is licensed under the [MIT License](LICENSE).
+
+Copyright (c) 2025 Stefano Jang

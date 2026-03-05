@@ -3,7 +3,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { nanoid } from "nanoid";
 import { TaskSchema, WorkerSchema, SessionSchema, } from "./schema.js";
-import { taskFile, tasksDir, workerFile, workersDir, sessionFile, sessionsDir, ensureDirs, getProjectRoot, safeWriteFile, } from "./paths.js";
+import { taskFile, tasksDir, workerFile, workersDir, sessionFile, sessionsDir, currentSessionFile, ctxflowDir, ensureDirs, getProjectRoot, safeWriteFile, } from "./paths.js";
 import { withLock } from "./lock.js";
 import { logDebug } from "./log.js";
 import { loadConfig } from "./config.js";
@@ -91,7 +91,25 @@ export function removeSession(sessionId) {
     }
 }
 export function getCurrentSessionId() {
-    return process.env.CTXFLOW_SESSION ?? null;
+    if (process.env.CTXFLOW_SESSION)
+        return process.env.CTXFLOW_SESSION;
+    try {
+        return fs.readFileSync(currentSessionFile(), "utf-8").trim() || null;
+    }
+    catch {
+        return null;
+    }
+}
+export function writeCurrentSession(sessionId) {
+    safeWriteFile(currentSessionFile(), ctxflowDir(), sessionId);
+}
+export function clearCurrentSession() {
+    try {
+        fs.unlinkSync(currentSessionFile());
+    }
+    catch {
+        // Already removed
+    }
 }
 export function getCurrentSession() {
     const sessionId = getCurrentSessionId();

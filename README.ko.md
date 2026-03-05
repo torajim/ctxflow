@@ -96,14 +96,15 @@ ctxflow
 ctxflow start "JWT 인증 미들웨어 구현"
 ```
 
-#### 2. 세션 트래킹 활성화 후 LLM과 코딩
+#### 2. LLM과 코딩
 
-작업 시작 후 ctxflow가 세션 ID를 표시합니다. 환경변수로 설정한 뒤 Claude Code를 시작합니다:
+세션이 자동 저장되므로 바로 Claude Code를 시작하면 됩니다:
 
 ```bash
-export CTXFLOW_SESSION=<session-id>
 claude
 ```
+
+이미 실행 중인 Claude Code 세션 안에서 Bash 도구로 `ctxflow start`를 실행해도 됩니다. 별도 터미널이 필요 없습니다.
 
 이제부터 Claude가 도구를 사용할 때마다, 팀원들이 무엇을 하고 있는지 자동으로 컨텍스트를 받습니다:
 
@@ -196,10 +197,9 @@ cd /tmp/ctxflow-demo
 ctxflow start "Todo 유틸리티 라이브러리 만들기"
 ```
 
-ctxflow가 세션 ID를 출력합니다. 복사한 뒤 실행합니다:
+세션이 자동 저장됩니다. Claude Code를 바로 실행합니다:
 
 ```bash
-export CTXFLOW_SESSION=<출력된-session-id>
 claude
 ```
 
@@ -233,10 +233,9 @@ Active tasks:
 Select a task to join, or N to create new: 1
 ```
 
-세션 ID를 복사하고 실행합니다:
+세션이 자동 저장됩니다. Claude Code를 실행합니다:
 
 ```bash
-export CTXFLOW_SESSION=<출력된-session-id>
 claude
 ```
 
@@ -314,6 +313,7 @@ rm -rf /tmp/ctxflow-demo /tmp/ctxflow-demo-remote.git
 ├── locks/
 │   └── {name}.lock/               # 원자적 디렉토리 기반 lock
 ├── .sync/                         # orphan branch 동기화용 git 저장소
+├── current-session                # 자동 저장된 현재 세션 ID
 ├── daemon.pid                     # 백그라운드 데몬 PID
 ├── daemon.lock/                   # 데몬 싱글톤 lock
 └── debug.log                      # 데몬 디버그 로그
@@ -344,7 +344,7 @@ rm -rf /tmp/ctxflow-demo /tmp/ctxflow-demo-remote.git
 
 | 변수 | 설명 |
 |------|------|
-| `CTXFLOW_SESSION` | 현재 세션 ID. Claude Code 실행 전에 설정하여 훅이 세션을 식별할 수 있도록 합니다. |
+| `CTXFLOW_SESSION` | 현재 세션 ID. `.ctxflow/current-session` 파일에서 자동 감지됩니다. 수동 오버라이드가 필요할 때만 설정합니다. |
 
 ### 설정 파일
 

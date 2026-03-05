@@ -18,6 +18,8 @@ import {
   sessionFile,
   sessionsDir,
   contextFile,
+  currentSessionFile,
+  ctxflowDir,
   ensureDirs,
   getProjectRoot,
   safeWriteFile,
@@ -118,7 +120,24 @@ export function removeSession(sessionId: string): void {
 }
 
 export function getCurrentSessionId(): string | null {
-  return process.env.CTXFLOW_SESSION ?? null;
+  if (process.env.CTXFLOW_SESSION) return process.env.CTXFLOW_SESSION;
+  try {
+    return fs.readFileSync(currentSessionFile(), "utf-8").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeCurrentSession(sessionId: string): void {
+  safeWriteFile(currentSessionFile(), ctxflowDir(), sessionId);
+}
+
+export function clearCurrentSession(): void {
+  try {
+    fs.unlinkSync(currentSessionFile());
+  } catch {
+    // Already removed
+  }
 }
 
 export function getCurrentSession(): Session | null {

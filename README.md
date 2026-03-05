@@ -96,14 +96,15 @@ You can also directly start a new task:
 ctxflow start "Implement JWT auth middleware"
 ```
 
-#### 2. Enable session tracking and code with your LLM
+#### 2. Code with your LLM
 
-After starting a task, ctxflow will display the session ID. Set it as an environment variable and launch Claude Code:
+The session is auto-saved, so just launch Claude Code — hooks pick it up automatically:
 
 ```bash
-export CTXFLOW_SESSION=<session-id>
 claude
 ```
+
+You can also run `ctxflow start` from **within** an existing Claude Code session using the Bash tool. No separate terminal needed.
 
 From now on, every time Claude uses a tool, it automatically receives context about what your teammates are doing:
 
@@ -196,10 +197,9 @@ cd /tmp/ctxflow-demo
 ctxflow start "Build a shared Todo utility library"
 ```
 
-ctxflow prints a session ID. Copy it and run:
+ctxflow auto-saves the session. Just launch Claude Code:
 
 ```bash
-export CTXFLOW_SESSION=<session-id-from-output>
 claude
 ```
 
@@ -233,10 +233,9 @@ Active tasks:
 Select a task to join, or N to create new: 1
 ```
 
-Copy the session ID and run:
+Session is auto-saved. Launch Claude Code:
 
 ```bash
-export CTXFLOW_SESSION=<session-id-from-output>
 claude
 ```
 
@@ -314,6 +313,7 @@ rm -rf /tmp/ctxflow-demo /tmp/ctxflow-demo-remote.git
 ├── locks/
 │   └── {name}.lock/               # atomic directory-based locks
 ├── .sync/                         # git repo for orphan branch sync
+├── current-session                # auto-saved current session ID
 ├── daemon.pid                     # background daemon PID
 ├── daemon.lock/                   # daemon singleton lock
 └── debug.log                      # daemon debug log
@@ -344,7 +344,7 @@ rm -rf /tmp/ctxflow-demo /tmp/ctxflow-demo-remote.git
 
 | Variable | Description |
 |----------|-------------|
-| `CTXFLOW_SESSION` | Current session ID. Set this before launching Claude Code so hooks can identify your session. |
+| `CTXFLOW_SESSION` | Current session ID. Auto-detected from `.ctxflow/current-session` file. Set manually only if you need to override. |
 
 ### Configuration
 

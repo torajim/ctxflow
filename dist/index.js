@@ -5,7 +5,7 @@ import fs from "node:fs";
 import readline from "node:readline";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { getMe, createTask, getTask, listTasks, updateTaskStatus, getWorker, saveWorker, createWorker, listWorkers, getTaskParticipants, addFileChange, createSession, getCurrentSessionId, updateSessionDaemonPid, removeSession, listSessions, } from "./core/task.js";
+import { getMe, createTask, getTask, listTasks, updateTaskStatus, getWorker, saveWorker, createWorker, listWorkers, getTaskParticipants, addFileChange, createSession, getCurrentSessionId, updateSessionDaemonPid, removeSession, listSessions, writeCurrentSession, clearCurrentSession, } from "./core/task.js";
 import { hasGitRemote, isGitRepo, initGitWithRemote } from "./core/sync.js";
 import { generateContext } from "./core/context.js";
 import { ensureDirs, daemonPidFile, contextFile, } from "./core/paths.js";
@@ -252,6 +252,7 @@ program
         saveWorker(worker);
         // Remove session
         removeSession(sessionId);
+        clearCurrentSession();
         // Stop daemon if no other local sessions active
         stopDaemonIfIdle();
         console.log(chalk.yellow(`\nSession ${sessionId} stopped.\n`));
@@ -474,6 +475,7 @@ async function startNewTask(me, description) {
     ensureGitignore();
     installHooks();
     startDaemonForSession(session.session_id);
+    writeCurrentSession(session.session_id);
     console.log(chalk.green(`\nTask started: ${description}`));
     console.log(chalk.dim(`Task ID: ${task.id}`));
     console.log(chalk.dim(`Session: ${session.session_id}`));
@@ -491,6 +493,7 @@ async function joinExistingTask(me, taskId, taskDescription) {
     ensureGitignore();
     installHooks();
     startDaemonForSession(session.session_id);
+    writeCurrentSession(session.session_id);
     console.log(chalk.green(`\nJoined task: ${taskDescription}`));
     console.log(chalk.dim(`Task ID: ${taskId}`));
     console.log(chalk.dim(`Session: ${session.session_id}`));
@@ -498,10 +501,8 @@ async function joinExistingTask(me, taskId, taskDescription) {
     printSessionInstructions(session.session_id);
 }
 function printSessionInstructions(sessionId) {
-    console.log(chalk.cyan("To enable session tracking in Claude Code, run:"));
-    console.log(chalk.white(`  export CTXFLOW_SESSION=${sessionId}`));
-    console.log(chalk.cyan("Then start Claude Code:"));
-    console.log(chalk.white("  claude\n"));
+    console.log(chalk.cyan("Session auto-saved. Hooks will pick it up automatically."));
+    console.log(chalk.dim(`(or set manually: export CTXFLOW_SESSION=${sessionId})\n`));
 }
 // --- Helpers ---
 function formatTimeAgo(date) {

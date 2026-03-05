@@ -98,6 +98,10 @@ export function sessionFile(sessionId: string): string {
   return path.join(sessionsDir(), `${sanitizeId(sessionId)}.json`);
 }
 
+export function currentSessionFile(): string {
+  return path.join(ctxflowDir(), "current-session");
+}
+
 export function daemonPidFile(): string {
   return path.join(ctxflowDir(), "daemon.pid");
 }

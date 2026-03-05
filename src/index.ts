@@ -26,6 +26,8 @@ import {
   updateSessionDaemonPid,
   removeSession,
   listSessions,
+  writeCurrentSession,
+  clearCurrentSession,
 } from "./core/task.js";
 import { hasGitRemote, ensureCtxflowBranch, isGitRepo, initGitWithRemote } from "./core/sync.js";
 import { generateContext } from "./core/context.js";
@@ -310,6 +312,7 @@ program
 
     // Remove session
     removeSession(sessionId);
+    clearCurrentSession();
 
     // Stop daemon if no other local sessions active
     stopDaemonIfIdle();
@@ -555,6 +558,8 @@ async function startNewTask(me: string, description: string): Promise<void> {
   installHooks();
   startDaemonForSession(session.session_id);
 
+  writeCurrentSession(session.session_id);
+
   console.log(chalk.green(`\nTask started: ${description}`));
   console.log(chalk.dim(`Task ID: ${task.id}`));
   console.log(chalk.dim(`Session: ${session.session_id}`));
@@ -580,6 +585,8 @@ async function joinExistingTask(
   installHooks();
   startDaemonForSession(session.session_id);
 
+  writeCurrentSession(session.session_id);
+
   console.log(chalk.green(`\nJoined task: ${taskDescription}`));
   console.log(chalk.dim(`Task ID: ${taskId}`));
   console.log(chalk.dim(`Session: ${session.session_id}`));
@@ -588,10 +595,8 @@ async function joinExistingTask(
 }
 
 function printSessionInstructions(sessionId: string): void {
-  console.log(chalk.cyan("To enable session tracking in Claude Code, run:"));
-  console.log(chalk.white(`  export CTXFLOW_SESSION=${sessionId}`));
-  console.log(chalk.cyan("Then start Claude Code:"));
-  console.log(chalk.white("  claude\n"));
+  console.log(chalk.cyan("Session auto-saved. Hooks will pick it up automatically."));
+  console.log(chalk.dim(`(or set manually: export CTXFLOW_SESSION=${sessionId})\n`));
 }
 
 // --- Helpers ---

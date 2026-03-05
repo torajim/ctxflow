@@ -19,6 +19,7 @@ export declare function workerFile(sessionId: string): string;
 export declare function taskFile(id: string): string;
 export declare function contextFile(sessionId: string): string;
 export declare function sessionFile(sessionId: string): string;
+export declare function currentSessionFile(): string;
 export declare function daemonPidFile(): string;
 export declare function daemonLockFile(): string;
 export declare function ensureDirs(): void;

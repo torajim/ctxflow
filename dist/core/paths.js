@@ -82,6 +82,9 @@ export function contextFile(sessionId) {
 export function sessionFile(sessionId) {
     return path.join(sessionsDir(), `${sanitizeId(sessionId)}.json`);
 }
+export function currentSessionFile() {
+    return path.join(ctxflowDir(), "current-session");
+}
 export function daemonPidFile() {
     return path.join(ctxflowDir(), "daemon.pid");
 }

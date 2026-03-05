@@ -1,0 +1,16 @@
+import { type Task, type Worker } from "./schema.js";
+export declare function getMe(): string | null;
+export declare function setMe(name: string): void;
+export declare function getMeOrDefault(): string;
+export declare function createTask(description: string, createdBy: string): Task;
+export declare function getTask(id: string): Task | null;
+export declare function listTasks(): Task[];
+export declare function updateTaskStatus(id: string, status: "active" | "done"): Task | null;
+export declare function getWorker(name: string): Worker | null;
+export declare function listWorkers(): Worker[];
+export declare function saveWorker(worker: Worker): void;
+export declare function createWorker(name: string, machine: string, taskId: string): Worker;
+export declare function updateHeartbeat(name: string): void;
+export declare function addFileChange(workerName: string, filePath: string, summary: string): void;
+export declare function getTaskParticipants(taskId: string): Worker[];
+export declare function getActiveWorkers(): Worker[];

@@ -7,7 +7,7 @@
     "ctxflow": "./dist/index.js"
   },
   "scripts": {
-    "prepare": "tsc",
+    "prepare": "npx tsc",
     "build": "tsc",
     "dev": "tsc --watch",
     "start": "node dist/index.js",

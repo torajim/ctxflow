@@ -198,10 +198,10 @@ export CTXFLOW_WORKER="stefano"
 ctxflow start "Build a shared Todo utility library"
 ```
 
-ctxflow auto-saves the session. Launch Claude Code with `--verbose` to see hook-injected context in real time:
+ctxflow auto-saves the session. Launch Claude Code:
 
 ```bash
-claude --verbose
+claude
 ```
 
 Give Claude this exact prompt:
@@ -227,7 +227,7 @@ ctxflow
 Select the active task from the list. Then launch Claude Code:
 
 ```bash
-claude --verbose
+claude
 ```
 
 Now give Claude this prompt:
@@ -240,11 +240,10 @@ Create a Todo formatter in TypeScript:
 
 ### What you'll see
 
-These messages are injected into **Claude's context** via hooks — Claude (the LLM) sees them automatically before every tool use. To see what's being injected right now, run this in any terminal (or ask Claude to run it via Bash):
+These messages are injected into **Claude's context** via hooks — Claude (the LLM) sees them automatically before every tool use, but they are **not displayed in the terminal**. To verify:
 
-```bash
-ctxflow context --format hook
-```
+- **Preview what's being injected:** run `ctxflow debug-hooks` in any terminal
+- **Confirm Claude received it:** ask Claude "Do you see any ctxflow collaboration context?"
 
 **Context sharing** — When Worker B's Claude uses any tool, it receives:
 
@@ -333,6 +332,7 @@ rm -rf /tmp/ctxflow-demo /tmp/ctxflow-demo-remote.git
 | `ctxflow stop` | Stop your current task |
 | `ctxflow stop --session <id>` | Stop a specific session |
 | `ctxflow cleanup` | Remove disconnected workers and done tasks |
+| `ctxflow debug-hooks` | Verify hook setup and preview injected context |
 
 ### Internal commands (used by hooks)
 

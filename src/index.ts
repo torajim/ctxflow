@@ -31,10 +31,12 @@ import {
 } from "./core/task.js";
 import { hasGitRemote, ensureCtxflowBranch, isGitRepo, initGitWithRemote } from "./core/sync.js";
 import { generateContext } from "./core/context.js";
+import path from "node:path";
 import {
   ensureDirs,
   daemonPidFile,
   contextFile,
+  getProjectRoot,
 } from "./core/paths.js";
 import { installHooks, ensureGitignore } from "./hooks.js";
 
@@ -504,6 +506,58 @@ program
     }
   });
 
+// ctxflow debug-hooks
+program
+  .command("debug-hooks")
+  .description("Test hook setup and output")
+  .action(async () => {
+    try {
+      ensureDirs();
+
+      const settingsFile = path.join(getProjectRoot(), ".claude", "settings.local.json");
+      if (!fs.existsSync(settingsFile)) {
+        console.log(chalk.red("✗ No .claude/settings.local.json found"));
+        console.log(chalk.dim("  Run 'ctxflow start' or 'ctxflow join' to install hooks."));
+        return;
+      }
+      console.log(chalk.green("✓ .claude/settings.local.json exists"));
+
+      const settings = JSON.parse(fs.readFileSync(settingsFile, "utf-8"));
+      const preHooks = settings?.hooks?.PreToolUse;
+      if (preHooks?.some((h: { hooks: { command: string }[] }) => h.hooks?.some((hh: { command: string }) => hh.command.includes("ctxflow context")))) {
+        console.log(chalk.green("✓ PreToolUse hook installed"));
+      } else {
+        console.log(chalk.red("✗ PreToolUse hook not found"));
+      }
+
+      const sessionId = getCurrentSessionId();
+      if (sessionId) {
+        console.log(chalk.green(`✓ Current session: ${sessionId}`));
+        const worker = getWorker(sessionId);
+        if (worker) {
+          console.log(chalk.green(`✓ Worker: ${worker.name} (${worker.status})`));
+        } else {
+          console.log(chalk.red(`✗ No worker found for session ${sessionId}`));
+        }
+      } else {
+        console.log(chalk.yellow("⚠ No current session (hook will output nothing)"));
+      }
+
+      const sessions = listSessions();
+      console.log(chalk.dim(`  Total sessions: ${sessions.length}`));
+
+      console.log(chalk.cyan("\nHook output preview:"));
+      const context = generateContext(sessionId, "hook");
+      if (context) {
+        console.log(chalk.white(context));
+      } else {
+        console.log(chalk.yellow("  (empty — no other active workers)"));
+      }
+    } catch (err) {
+      console.error(chalk.red(`Error: ${err instanceof Error ? err.message : String(err)}`));
+    }
+  });
+
 // ctxflow daemon (hidden)
 program
   .command("daemon", { hidden: true })
@@ -557,6 +611,17 @@ async function ensureIdentity(): Promise<string> {
 }
 
 async function startNewTask(me: string, description: string): Promise<void> {
+  // Reuse existing session if still active
+  const existingId = getCurrentSessionId();
+  if (existingId) {
+    const existingWorker = getWorker(existingId);
+    if (existingWorker && existingWorker.name === me && existingWorker.status !== "disconnected") {
+      console.log(chalk.yellow(`\nAlready in an active session: ${existingId} (${me})`));
+      console.log(chalk.dim(`Run 'ctxflow stop' first to leave the current session.\n`));
+      return;
+    }
+  }
+
   const task = createTask(description, me);
   const session = createSession(me, task.id);
   const hostname = (await import("node:os")).hostname();
@@ -585,6 +650,22 @@ async function joinExistingTask(
   taskId: string,
   taskDescription: string,
 ): Promise<void> {
+  // Reuse existing session if still active for the same task
+  const existingId = getCurrentSessionId();
+  if (existingId) {
+    const existingWorker = getWorker(existingId);
+    if (existingWorker && existingWorker.name === me && existingWorker.status !== "disconnected") {
+      if (existingWorker.task_id === taskId) {
+        console.log(chalk.yellow(`\nAlready in this task: ${existingId} (${me})`));
+        console.log(chalk.dim(`Session is still active. No action needed.\n`));
+        return;
+      }
+      console.log(chalk.yellow(`\nAlready in an active session: ${existingId} (${me})`));
+      console.log(chalk.dim(`Run 'ctxflow stop' first to leave the current session.\n`));
+      return;
+    }
+  }
+
   const session = createSession(me, taskId);
   const hostname = (await import("node:os")).hostname();
   createWorker(me, hostname, taskId, session.session_id);

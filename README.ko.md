@@ -198,10 +198,10 @@ export CTXFLOW_WORKER="stefano"
 ctxflow start "Todo 유틸리티 라이브러리 만들기"
 ```
 
-세션이 자동 저장됩니다. `--verbose` 플래그로 Claude Code를 실행하면 hook이 주입하는 컨텍스트를 실시간으로 볼 수 있습니다:
+세션이 자동 저장됩니다. Claude Code를 실행합니다:
 
 ```bash
-claude --verbose
+claude
 ```
 
 Claude에게 다음 프롬프트를 입력합니다:
@@ -227,7 +227,7 @@ ctxflow
 활성 작업 목록에서 선택하면 세션이 자동 저장됩니다. Claude Code를 실행합니다:
 
 ```bash
-claude --verbose
+claude
 ```
 
 Claude에게 다음 프롬프트를 입력합니다:
@@ -240,11 +240,10 @@ Todo 포맷터를 TypeScript로 만들어줘:
 
 ### 확인할 수 있는 것
 
-아래 메시지들은 hook을 통해 **Claude(LLM)의 컨텍스트에 자동 주입**됩니다. 매 도구 사용 전에 주입되어 Claude가 협업 상황을 파악합니다. 지금 주입되는 내용을 직접 확인하려면 아무 터미널에서 (또는 Claude에게 Bash로 실행을 요청해서) 다음 명령어를 실행합니다:
+아래 메시지들은 hook을 통해 **Claude(LLM)의 컨텍스트에 자동 주입**됩니다. 매 도구 사용 전에 주입되어 Claude가 협업 상황을 파악하지만, **터미널에는 표시되지 않습니다**. 확인 방법:
 
-```bash
-ctxflow context --format hook
-```
+- **주입될 내용 미리보기:** 아무 터미널에서 `ctxflow debug-hooks` 실행
+- **Claude가 받았는지 확인:** Claude에게 "ctxflow collaboration context가 보이니?" 라고 질문
 
 **컨텍스트 공유** — Worker B의 Claude가 도구를 사용할 때 자동으로 받는 내용:
 
@@ -333,6 +332,7 @@ rm -rf /tmp/ctxflow-demo /tmp/ctxflow-demo-remote.git
 | `ctxflow stop` | 현재 작업 중단 |
 | `ctxflow stop --session <id>` | 특정 세션 중단 |
 | `ctxflow cleanup` | 비활성 워커 및 완료 태스크 정리 |
+| `ctxflow debug-hooks` | hook 설정 확인 및 주입될 컨텍스트 미리보기 |
 
 ### 내부 명령어 (훅에서 사용)
 

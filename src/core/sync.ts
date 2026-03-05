@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { simpleGit, type SimpleGit } from "simple-git";
 import { ctxflowDir, getProjectRoot } from "./paths.js";
 import { logDebug } from "./log.js";
+import { loadConfig } from "./config.js";
 
 const BRANCH = "ctxflow";
 const SYNC_DIR = ".sync";
@@ -97,10 +98,15 @@ export async function ensureCtxflowBranch(): Promise<void> {
   }
 }
 
-export async function syncPush(
-  sessionId: string,
-  maxRetries = 3,
-): Promise<void> {
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function syncPush(sessionId: string): Promise<void> {
+  const config = loadConfig();
+  const maxRetries = config.pushMaxRetries;
+  const baseMs = config.pushRetryBaseMs;
+
   await ensureCtxflowBranch();
   const git = syncGit();
 
@@ -110,14 +116,14 @@ export async function syncPush(
     `context/${sessionId}.md`,
   ];
 
-  // Also stage any task files
-  const tasksPath = path.join(ctxflowDir(), "tasks");
-  if (fs.existsSync(tasksPath)) {
-    const taskFiles = fs
-      .readdirSync(tasksPath)
-      .filter((f) => f.endsWith(".json"));
-    for (const f of taskFiles) {
-      filesToStage.push(`tasks/${f}`);
+  // Also stage any task files and session files
+  for (const subdir of ["tasks", "sessions"]) {
+    const dirPath = path.join(ctxflowDir(), subdir);
+    if (fs.existsSync(dirPath)) {
+      const files = fs.readdirSync(dirPath).filter((f) => f.endsWith(".json"));
+      for (const f of files) {
+        filesToStage.push(`${subdir}/${f}`);
+      }
     }
   }
 
@@ -135,7 +141,6 @@ export async function syncPush(
 
   await git.commit(`sync: ${sessionId} @ ${new Date().toISOString()}`);
 
-  // Push with retry (use sync repo's remote check)
   if (!(await hasSyncRemote())) return;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -145,6 +150,9 @@ export async function syncPush(
     } catch (err) {
       logDebug(`push attempt ${attempt + 1} failed: ${err instanceof Error ? err.message : String(err)}`);
       if (attempt < maxRetries - 1) {
+        // Exponential backoff with jitter
+        const delay = baseMs * Math.pow(2, attempt) + Math.random() * baseMs;
+        await sleep(delay);
         try {
           await git.pull("origin", BRANCH, { "--rebase": null });
         } catch (pullErr) {
@@ -164,7 +172,6 @@ export async function syncPull(): Promise<void> {
 
   try {
     await git.fetch("origin", BRANCH);
-    // Use rebase instead of reset --hard to preserve local unpushed commits
     try {
       await git.rebase([`origin/${BRANCH}`]);
     } catch (rebaseErr) {
@@ -174,8 +181,20 @@ export async function syncPull(): Promise<void> {
       } catch {
         // Abort may fail if rebase wasn't in progress
       }
-      // Fallback: since each worker owns their files, reset is safe as last resort
+      // Stash any local changes before reset to prevent data loss
+      try {
+        await git.stash(["push", "-m", `ctxflow-backup-${Date.now()}`]);
+        logDebug("stashed local changes before hard reset");
+      } catch {
+        // Nothing to stash
+      }
       await git.raw(["reset", "--hard", `origin/${BRANCH}`]);
+      // Try to restore stashed changes
+      try {
+        await git.stash(["pop"]);
+      } catch {
+        logDebug("stash pop failed after reset — local changes saved in stash");
+      }
     }
   } catch (err) {
     logDebug(`syncPull fetch failed: ${err instanceof Error ? err.message : String(err)}`);

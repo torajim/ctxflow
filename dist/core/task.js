@@ -2,13 +2,13 @@ import fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import { nanoid } from "nanoid";
 import { TaskSchema, WorkerSchema, SessionSchema, } from "./schema.js";
-import { taskFile, tasksDir, workerFile, workersDir, sessionFile, sessionsDir, ensureDirs, getProjectRoot, } from "./paths.js";
-const MAX_FILES_TOUCHED = 50;
-// --- Atomic file write ---
-function writeFileAtomic(filePath, data) {
-    const tmpPath = filePath + ".tmp." + process.pid;
-    fs.writeFileSync(tmpPath, data);
-    fs.renameSync(tmpPath, filePath);
+import { taskFile, tasksDir, workerFile, workersDir, sessionFile, sessionsDir, ensureDirs, getProjectRoot, safeWriteFile, } from "./paths.js";
+import { withLock } from "./lock.js";
+import { logDebug } from "./log.js";
+import { loadConfig } from "./config.js";
+// --- Atomic file write (with path safety) ---
+function writeFileAtomic(filePath, parentDir, data) {
+    safeWriteFile(filePath, parentDir, data);
 }
 // --- Identity (from git config) ---
 export function getMe() {
@@ -35,7 +35,7 @@ export function createSession(name, taskId, daemonPid = null) {
         daemon_pid: daemonPid,
         created_at: new Date().toISOString(),
     };
-    writeFileAtomic(sessionFile(sessionId), JSON.stringify(session, null, 2));
+    writeFileAtomic(sessionFile(sessionId), sessionsDir(), JSON.stringify(session, null, 2));
     return session;
 }
 export function getSession(sessionId) {
@@ -43,16 +43,21 @@ export function getSession(sessionId) {
         const raw = JSON.parse(fs.readFileSync(sessionFile(sessionId), "utf-8"));
         return SessionSchema.parse(raw);
     }
-    catch {
+    catch (err) {
+        if (err instanceof SyntaxError) {
+            logDebug(`corrupted session file for ${sessionId}: ${err.message}`);
+        }
         return null;
     }
 }
 export function updateSessionDaemonPid(sessionId, pid) {
-    const session = getSession(sessionId);
-    if (!session)
-        return;
-    session.daemon_pid = pid;
-    writeFileAtomic(sessionFile(sessionId), JSON.stringify(session, null, 2));
+    withLock(`session-${sessionId}`, () => {
+        const session = getSession(sessionId);
+        if (!session)
+            return;
+        session.daemon_pid = pid;
+        writeFileAtomic(sessionFile(sessionId), sessionsDir(), JSON.stringify(session, null, 2));
+    });
 }
 export function listSessions() {
     try {
@@ -63,7 +68,10 @@ export function listSessions() {
                 const raw = JSON.parse(fs.readFileSync(`${sessionsDir()}/${f}`, "utf-8"));
                 return SessionSchema.parse(raw);
             }
-            catch {
+            catch (err) {
+                if (err instanceof SyntaxError) {
+                    logDebug(`corrupted session file ${f}: ${err.message}`);
+                }
                 return null;
             }
         })
@@ -100,7 +108,7 @@ export function createTask(description, createdBy) {
         created_at: new Date().toISOString(),
         status: "active",
     };
-    writeFileAtomic(taskFile(task.id), JSON.stringify(task, null, 2));
+    writeFileAtomic(taskFile(task.id), tasksDir(), JSON.stringify(task, null, 2));
     return task;
 }
 export function getTask(id) {
@@ -108,7 +116,10 @@ export function getTask(id) {
         const raw = JSON.parse(fs.readFileSync(taskFile(id), "utf-8"));
         return TaskSchema.parse(raw);
     }
-    catch {
+    catch (err) {
+        if (err instanceof SyntaxError) {
+            logDebug(`corrupted task file for ${id}: ${err.message}`);
+        }
         return null;
     }
 }
@@ -121,7 +132,10 @@ export function listTasks() {
                 const raw = JSON.parse(fs.readFileSync(`${tasksDir()}/${f}`, "utf-8"));
                 return TaskSchema.parse(raw);
             }
-            catch {
+            catch (err) {
+                if (err instanceof SyntaxError) {
+                    logDebug(`corrupted task file ${f}: ${err.message}`);
+                }
                 return null;
             }
         })
@@ -132,12 +146,14 @@ export function listTasks() {
     }
 }
 export function updateTaskStatus(id, status) {
-    const task = getTask(id);
-    if (!task)
-        return null;
-    task.status = status;
-    writeFileAtomic(taskFile(id), JSON.stringify(task, null, 2));
-    return task;
+    return withLock(`task-${id}`, () => {
+        const task = getTask(id);
+        if (!task)
+            return null;
+        task.status = status;
+        writeFileAtomic(taskFile(id), tasksDir(), JSON.stringify(task, null, 2));
+        return task;
+    });
 }
 // --- Workers ---
 export function getWorker(sessionId) {
@@ -145,7 +161,10 @@ export function getWorker(sessionId) {
         const raw = JSON.parse(fs.readFileSync(workerFile(sessionId), "utf-8"));
         return WorkerSchema.parse(raw);
     }
-    catch {
+    catch (err) {
+        if (err instanceof SyntaxError) {
+            logDebug(`corrupted worker file for ${sessionId}: ${err.message}`);
+        }
         return null;
     }
 }
@@ -160,7 +179,10 @@ export function listWorkers() {
                 const raw = JSON.parse(fs.readFileSync(`${workersDir()}/${f}`, "utf-8"));
                 return WorkerSchema.parse(raw);
             }
-            catch {
+            catch (err) {
+                if (err instanceof SyntaxError) {
+                    logDebug(`corrupted worker file ${f}: ${err.message}`);
+                }
                 return null;
             }
         })
@@ -172,7 +194,7 @@ export function listWorkers() {
 }
 export function saveWorker(worker) {
     ensureDirs();
-    writeFileAtomic(workerFile(worker.session_id), JSON.stringify(worker, null, 2));
+    writeFileAtomic(workerFile(worker.session_id), workersDir(), JSON.stringify(worker, null, 2));
 }
 export function createWorker(name, machine, taskId, sessionId) {
     const now = new Date().toISOString();
@@ -190,33 +212,37 @@ export function createWorker(name, machine, taskId, sessionId) {
     return worker;
 }
 export function updateHeartbeat(sessionId) {
-    const worker = getWorker(sessionId);
-    if (!worker)
-        return;
-    worker.last_heartbeat = new Date().toISOString();
-    saveWorker(worker);
+    withLock(`worker-${sessionId}`, () => {
+        const worker = getWorker(sessionId);
+        if (!worker)
+            return;
+        worker.last_heartbeat = new Date().toISOString();
+        saveWorker(worker);
+    });
 }
 export function addFileChange(sessionId, filePath, summary) {
-    const worker = getWorker(sessionId);
-    if (!worker)
-        return;
-    const existing = worker.files_touched.find((f) => f.path === filePath);
-    if (existing) {
-        existing.summary = summary;
-        existing.updated_at = new Date().toISOString();
-    }
-    else {
-        worker.files_touched.push({
-            path: filePath,
-            summary,
-            updated_at: new Date().toISOString(),
-        });
-    }
-    // Prune old entries to prevent unbounded growth
-    if (worker.files_touched.length > MAX_FILES_TOUCHED) {
-        worker.files_touched = worker.files_touched.slice(-MAX_FILES_TOUCHED);
-    }
-    saveWorker(worker);
+    const maxFiles = loadConfig().maxFilesTouched;
+    withLock(`worker-${sessionId}`, () => {
+        const worker = getWorker(sessionId);
+        if (!worker)
+            return;
+        const existing = worker.files_touched.find((f) => f.path === filePath);
+        if (existing) {
+            existing.summary = summary;
+            existing.updated_at = new Date().toISOString();
+        }
+        else {
+            worker.files_touched.push({
+                path: filePath,
+                summary,
+                updated_at: new Date().toISOString(),
+            });
+        }
+        if (worker.files_touched.length > maxFiles) {
+            worker.files_touched = worker.files_touched.slice(-maxFiles);
+        }
+        saveWorker(worker);
+    });
 }
 export function getTaskParticipants(taskId) {
     return listWorkers().filter((w) => w.task_id === taskId);

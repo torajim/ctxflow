@@ -5,7 +5,7 @@ import fs from "node:fs";
 import readline from "node:readline";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { getMe, createTask, getTask, listTasks, updateTaskStatus, getWorker, saveWorker, createWorker, getTaskParticipants, addFileChange, createSession, getCurrentSessionId, updateSessionDaemonPid, removeSession, listSessions, } from "./core/task.js";
+import { getMe, createTask, getTask, listTasks, updateTaskStatus, getWorker, saveWorker, createWorker, listWorkers, getTaskParticipants, addFileChange, createSession, getCurrentSessionId, updateSessionDaemonPid, removeSession, listSessions, } from "./core/task.js";
 import { hasGitRemote, isGitRepo, initGitWithRemote } from "./core/sync.js";
 import { generateContext } from "./core/context.js";
 import { ensureDirs, daemonPidFile, contextFile, } from "./core/paths.js";
@@ -154,6 +154,32 @@ program
         console.log();
     }
 });
+// ctxflow status
+program
+    .command("status")
+    .description("Show daemon and session status")
+    .action(async () => {
+    ensureDirs();
+    const { isDaemonRunning } = await import("./daemon.js");
+    const running = isDaemonRunning();
+    console.log(chalk.bold("\nctxflow status\n"));
+    console.log(`  Daemon: ${running ? chalk.green("running") : chalk.red("stopped")}`);
+    const sessions = listSessions();
+    if (sessions.length === 0) {
+        console.log(chalk.gray("  No active sessions.\n"));
+    }
+    else {
+        console.log(`  Sessions: ${sessions.length}`);
+        for (const s of sessions) {
+            const task = getTask(s.task_id);
+            const worker = getWorker(s.session_id);
+            const status = worker?.status ?? "unknown";
+            const statusColor = status === "working" ? chalk.green : status === "idle" ? chalk.yellow : chalk.red;
+            console.log(`    ${s.session_id} - ${statusColor(status)} - "${task?.description ?? s.task_id}"`);
+        }
+        console.log();
+    }
+});
 // ctxflow stop
 program
     .command("stop")
@@ -231,6 +257,48 @@ program
     const me = await ensureIdentity();
     await joinExistingTask(me, taskId, task.description);
 });
+// ctxflow cleanup
+program
+    .command("cleanup")
+    .description("Remove disconnected workers and done tasks")
+    .action(async () => {
+    ensureDirs();
+    let cleaned = 0;
+    // Remove disconnected workers without active sessions
+    const workers = listWorkers();
+    const sessions = listSessions();
+    const activeSessionIds = new Set(sessions.map((s) => s.session_id));
+    for (const worker of workers) {
+        if (worker.status === "disconnected" && !activeSessionIds.has(worker.session_id)) {
+            try {
+                fs.unlinkSync((await import("./core/paths.js")).workerFile(worker.session_id));
+                cleaned++;
+            }
+            catch { /* ignore */ }
+            // Clean context file too
+            try {
+                fs.unlinkSync((await import("./core/paths.js")).contextFile(worker.session_id));
+            }
+            catch { /* ignore */ }
+        }
+    }
+    // Remove done tasks with no active participants
+    const tasks = listTasks();
+    for (const task of tasks) {
+        if (task.status === "done") {
+            const participants = getTaskParticipants(task.id);
+            const hasActive = participants.some((p) => p.status === "working" || p.status === "idle");
+            if (!hasActive) {
+                try {
+                    fs.unlinkSync((await import("./core/paths.js")).taskFile(task.id));
+                    cleaned++;
+                }
+                catch { /* ignore */ }
+            }
+        }
+    }
+    console.log(chalk.green(`Cleaned up ${cleaned} stale entries.`));
+});
 // ctxflow context
 program
     .command("context")
@@ -268,8 +336,14 @@ program
     }
     if (!filePath || typeof filePath !== "string")
         return;
-    // Reject paths that attempt directory traversal
-    if (filePath.includes("\0") || /\.\.[/\\]/.test(filePath))
+    // Reject null bytes
+    if (filePath.includes("\0"))
+        return;
+    // Validate resolved path is within project root
+    const resolvedPath = (await import("node:path")).default.resolve(filePath);
+    const projectRoot = (await import("./core/paths.js")).getProjectRoot();
+    const resolvedRoot = (await import("node:path")).default.resolve(projectRoot);
+    if (!resolvedPath.startsWith(resolvedRoot + "/") && resolvedPath !== resolvedRoot)
         return;
     const sessionId = getCurrentSessionId();
     if (!sessionId)
@@ -436,16 +510,28 @@ function readStdin() {
 }
 function startDaemonForSession(sessionId) {
     const pidFile = daemonPidFile();
-    if (fs.existsSync(pidFile)) {
-        const pid = parseInt(fs.readFileSync(pidFile, "utf-8").trim(), 10);
-        try {
-            process.kill(pid, 0);
-            // Daemon already running — it handles all sessions
-            return;
+    // Check if daemon already running
+    try {
+        if (fs.existsSync(pidFile)) {
+            const pid = parseInt(fs.readFileSync(pidFile, "utf-8").trim(), 10);
+            if (!isNaN(pid)) {
+                try {
+                    process.kill(pid, 0);
+                    // Daemon is alive — no need to start another
+                    return;
+                }
+                catch {
+                    // Process is dead — clean up stale PID file
+                    try {
+                        fs.unlinkSync(pidFile);
+                    }
+                    catch { /* ignore */ }
+                }
+            }
         }
-        catch {
-            // Process doesn't exist, clean up stale pid file
-        }
+    }
+    catch {
+        // PID file read failed — proceed to start daemon
     }
     const daemonProcess = spawn(process.execPath, [fileURLToPath(import.meta.url), "daemon"], {
         detached: true,
@@ -454,6 +540,8 @@ function startDaemonForSession(sessionId) {
     });
     daemonProcess.unref();
     if (daemonProcess.pid) {
+        // The daemon itself will acquire its lock file for true mutual exclusion.
+        // This PID write is best-effort for quick checks.
         fs.writeFileSync(pidFile, String(daemonProcess.pid));
         updateSessionDaemonPid(sessionId, daemonProcess.pid);
     }
@@ -465,13 +553,20 @@ function stopDaemonIfIdle() {
     const sessions = listSessions();
     if (sessions.length > 0)
         return;
-    const pid = parseInt(fs.readFileSync(pidFile, "utf-8").trim(), 10);
     try {
-        process.kill(pid, "SIGTERM");
+        const pid = parseInt(fs.readFileSync(pidFile, "utf-8").trim(), 10);
+        if (!isNaN(pid)) {
+            process.kill(pid, "SIGTERM");
+        }
     }
     catch {
         // Process already gone
     }
-    fs.unlinkSync(pidFile);
+    try {
+        fs.unlinkSync(pidFile);
+    }
+    catch {
+        // Already removed
+    }
 }
 //# sourceMappingURL=index.js.map

@@ -6,7 +6,46 @@ function sanitizeId(id: string): string {
   if (!sanitized || sanitized === "." || sanitized === "..") {
     throw new Error(`Invalid ID: ${id}`);
   }
+  // Allow only alphanumeric, dash, underscore (nanoid chars)
+  if (!/^[\w-]+$/.test(sanitized)) {
+    throw new Error(`Invalid ID characters: ${id}`);
+  }
   return sanitized;
+}
+
+/**
+ * Resolve a path using realpathSync where possible, falling back to path.resolve.
+ * On macOS /var → /private/var, so both sides must be resolved consistently.
+ */
+function resolveReal(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+/**
+ * Validate that a resolved path is inside the expected parent directory.
+ * Prevents symlink and traversal attacks.
+ */
+export function assertPathInside(filePath: string, parentDir: string): void {
+  const resolvedParent = resolveReal(parentDir);
+  const resolvedFile = resolveReal(path.dirname(filePath));
+  if (!resolvedFile.startsWith(resolvedParent + path.sep) && resolvedFile !== resolvedParent) {
+    throw new Error(`Path escapes allowed directory: ${filePath}`);
+  }
+}
+
+/**
+ * Safe file write: validates the target is inside its expected directory before writing.
+ */
+export function safeWriteFile(filePath: string, parentDir: string, data: string): void {
+  fs.mkdirSync(parentDir, { recursive: true });
+  assertPathInside(filePath, parentDir);
+  const tmpPath = filePath + ".tmp." + process.pid + "." + Date.now();
+  fs.writeFileSync(tmpPath, data);
+  fs.renameSync(tmpPath, filePath);
 }
 
 let projectRoot: string | null = null;
@@ -40,6 +79,10 @@ export function sessionsDir(): string {
   return path.join(ctxflowDir(), "sessions");
 }
 
+export function lockDir(): string {
+  return path.join(ctxflowDir(), "locks");
+}
+
 export function workerFile(sessionId: string): string {
   return path.join(workersDir(), `${sanitizeId(sessionId)}.json`);
 }
@@ -60,8 +103,12 @@ export function daemonPidFile(): string {
   return path.join(ctxflowDir(), "daemon.pid");
 }
 
+export function daemonLockFile(): string {
+  return path.join(ctxflowDir(), "daemon.lock");
+}
+
 export function ensureDirs(): void {
-  for (const dir of [ctxflowDir(), tasksDir(), workersDir(), contextDir(), sessionsDir()]) {
+  for (const dir of [ctxflowDir(), tasksDir(), workersDir(), contextDir(), sessionsDir(), lockDir()]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 }

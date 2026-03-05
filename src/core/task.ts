@@ -19,16 +19,16 @@ import {
   contextFile,
   ensureDirs,
   getProjectRoot,
+  safeWriteFile,
 } from "./paths.js";
+import { withLock } from "./lock.js";
+import { logDebug } from "./log.js";
+import { loadConfig } from "./config.js";
 
-const MAX_FILES_TOUCHED = 50;
+// --- Atomic file write (with path safety) ---
 
-// --- Atomic file write ---
-
-function writeFileAtomic(filePath: string, data: string): void {
-  const tmpPath = filePath + ".tmp." + process.pid;
-  fs.writeFileSync(tmpPath, data);
-  fs.renameSync(tmpPath, filePath);
+function writeFileAtomic(filePath: string, parentDir: string, data: string): void {
+  safeWriteFile(filePath, parentDir, data);
 }
 
 // --- Identity (from git config) ---
@@ -62,7 +62,7 @@ export function createSession(
     daemon_pid: daemonPid,
     created_at: new Date().toISOString(),
   };
-  writeFileAtomic(sessionFile(sessionId), JSON.stringify(session, null, 2));
+  writeFileAtomic(sessionFile(sessionId), sessionsDir(), JSON.stringify(session, null, 2));
   return session;
 }
 
@@ -70,16 +70,21 @@ export function getSession(sessionId: string): Session | null {
   try {
     const raw = JSON.parse(fs.readFileSync(sessionFile(sessionId), "utf-8"));
     return SessionSchema.parse(raw);
-  } catch {
+  } catch (err) {
+    if (err instanceof SyntaxError) {
+      logDebug(`corrupted session file for ${sessionId}: ${err.message}`);
+    }
     return null;
   }
 }
 
 export function updateSessionDaemonPid(sessionId: string, pid: number): void {
-  const session = getSession(sessionId);
-  if (!session) return;
-  session.daemon_pid = pid;
-  writeFileAtomic(sessionFile(sessionId), JSON.stringify(session, null, 2));
+  withLock(`session-${sessionId}`, () => {
+    const session = getSession(sessionId);
+    if (!session) return;
+    session.daemon_pid = pid;
+    writeFileAtomic(sessionFile(sessionId), sessionsDir(), JSON.stringify(session, null, 2));
+  });
 }
 
 export function listSessions(): Session[] {
@@ -90,7 +95,10 @@ export function listSessions(): Session[] {
         try {
           const raw = JSON.parse(fs.readFileSync(`${sessionsDir()}/${f}`, "utf-8"));
           return SessionSchema.parse(raw);
-        } catch {
+        } catch (err) {
+          if (err instanceof SyntaxError) {
+            logDebug(`corrupted session file ${f}: ${err.message}`);
+          }
           return null;
         }
       })
@@ -129,7 +137,7 @@ export function createTask(description: string, createdBy: string): Task {
     created_at: new Date().toISOString(),
     status: "active",
   };
-  writeFileAtomic(taskFile(task.id), JSON.stringify(task, null, 2));
+  writeFileAtomic(taskFile(task.id), tasksDir(), JSON.stringify(task, null, 2));
   return task;
 }
 
@@ -137,7 +145,10 @@ export function getTask(id: string): Task | null {
   try {
     const raw = JSON.parse(fs.readFileSync(taskFile(id), "utf-8"));
     return TaskSchema.parse(raw);
-  } catch {
+  } catch (err) {
+    if (err instanceof SyntaxError) {
+      logDebug(`corrupted task file for ${id}: ${err.message}`);
+    }
     return null;
   }
 }
@@ -152,7 +163,10 @@ export function listTasks(): Task[] {
             fs.readFileSync(`${tasksDir()}/${f}`, "utf-8"),
           );
           return TaskSchema.parse(raw);
-        } catch {
+        } catch (err) {
+          if (err instanceof SyntaxError) {
+            logDebug(`corrupted task file ${f}: ${err.message}`);
+          }
           return null;
         }
       })
@@ -166,11 +180,13 @@ export function updateTaskStatus(
   id: string,
   status: "active" | "done",
 ): Task | null {
-  const task = getTask(id);
-  if (!task) return null;
-  task.status = status;
-  writeFileAtomic(taskFile(id), JSON.stringify(task, null, 2));
-  return task;
+  return withLock(`task-${id}`, () => {
+    const task = getTask(id);
+    if (!task) return null;
+    task.status = status;
+    writeFileAtomic(taskFile(id), tasksDir(), JSON.stringify(task, null, 2));
+    return task;
+  });
 }
 
 // --- Workers ---
@@ -179,7 +195,10 @@ export function getWorker(sessionId: string): Worker | null {
   try {
     const raw = JSON.parse(fs.readFileSync(workerFile(sessionId), "utf-8"));
     return WorkerSchema.parse(raw);
-  } catch {
+  } catch (err) {
+    if (err instanceof SyntaxError) {
+      logDebug(`corrupted worker file for ${sessionId}: ${err.message}`);
+    }
     return null;
   }
 }
@@ -196,7 +215,10 @@ export function listWorkers(): Worker[] {
             fs.readFileSync(`${workersDir()}/${f}`, "utf-8"),
           );
           return WorkerSchema.parse(raw);
-        } catch {
+        } catch (err) {
+          if (err instanceof SyntaxError) {
+            logDebug(`corrupted worker file ${f}: ${err.message}`);
+          }
           return null;
         }
       })
@@ -208,7 +230,7 @@ export function listWorkers(): Worker[] {
 
 export function saveWorker(worker: Worker): void {
   ensureDirs();
-  writeFileAtomic(workerFile(worker.session_id), JSON.stringify(worker, null, 2));
+  writeFileAtomic(workerFile(worker.session_id), workersDir(), JSON.stringify(worker, null, 2));
 }
 
 export function createWorker(
@@ -233,10 +255,12 @@ export function createWorker(
 }
 
 export function updateHeartbeat(sessionId: string): void {
-  const worker = getWorker(sessionId);
-  if (!worker) return;
-  worker.last_heartbeat = new Date().toISOString();
-  saveWorker(worker);
+  withLock(`worker-${sessionId}`, () => {
+    const worker = getWorker(sessionId);
+    if (!worker) return;
+    worker.last_heartbeat = new Date().toISOString();
+    saveWorker(worker);
+  });
 }
 
 export function addFileChange(
@@ -244,24 +268,26 @@ export function addFileChange(
   filePath: string,
   summary: string,
 ): void {
-  const worker = getWorker(sessionId);
-  if (!worker) return;
-  const existing = worker.files_touched.find((f) => f.path === filePath);
-  if (existing) {
-    existing.summary = summary;
-    existing.updated_at = new Date().toISOString();
-  } else {
-    worker.files_touched.push({
-      path: filePath,
-      summary,
-      updated_at: new Date().toISOString(),
-    });
-  }
-  // Prune old entries to prevent unbounded growth
-  if (worker.files_touched.length > MAX_FILES_TOUCHED) {
-    worker.files_touched = worker.files_touched.slice(-MAX_FILES_TOUCHED);
-  }
-  saveWorker(worker);
+  const maxFiles = loadConfig().maxFilesTouched;
+  withLock(`worker-${sessionId}`, () => {
+    const worker = getWorker(sessionId);
+    if (!worker) return;
+    const existing = worker.files_touched.find((f) => f.path === filePath);
+    if (existing) {
+      existing.summary = summary;
+      existing.updated_at = new Date().toISOString();
+    } else {
+      worker.files_touched.push({
+        path: filePath,
+        summary,
+        updated_at: new Date().toISOString(),
+      });
+    }
+    if (worker.files_touched.length > maxFiles) {
+      worker.files_touched = worker.files_touched.slice(-maxFiles);
+    }
+    saveWorker(worker);
+  });
 }
 
 export function getTaskParticipants(taskId: string): Worker[] {

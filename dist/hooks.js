@@ -46,7 +46,15 @@ export function installHooks() {
     let config = {};
     if (fs.existsSync(settingsFile)) {
         const raw = fs.readFileSync(settingsFile, "utf-8");
-        config = JSON.parse(raw);
+        try {
+            config = JSON.parse(raw);
+        }
+        catch {
+            // Backup corrupted file before overwriting
+            const backupFile = settingsFile + ".backup." + Date.now();
+            fs.copyFileSync(settingsFile, backupFile);
+            config = {};
+        }
     }
     if (!config.hooks) {
         config.hooks = {};
@@ -63,7 +71,10 @@ export function installHooks() {
             }
         }
     }
-    fs.writeFileSync(settingsFile, JSON.stringify(config, null, 2) + "\n");
+    // Atomic write to prevent corruption
+    const tmpFile = settingsFile + ".tmp." + process.pid;
+    fs.writeFileSync(tmpFile, JSON.stringify(config, null, 2) + "\n");
+    fs.renameSync(tmpFile, settingsFile);
 }
 export function ensureGitignore() {
     const gitignorePath = path.join(getProjectRoot(), ".gitignore");

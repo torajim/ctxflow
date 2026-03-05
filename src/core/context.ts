@@ -156,8 +156,11 @@ export function generateContext(
     : "unknown";
 
   sections.push("");
+  const contextPath = mySessionId
+    ? `.ctxflow/context/${mySessionId}.md`
+    : `.ctxflow/context/<your-session-id>.md`;
   sections.push(
-    `[ctxflow] When making key architectural decisions or changing your approach,\nplease update .ctxflow/context/${mySessionId ?? myName}.md with a brief summary.`,
+    `[ctxflow] When making key architectural decisions or changing your approach,\nplease update ${contextPath} with a brief summary.`,
   );
 
   const body = sections.join("\n");

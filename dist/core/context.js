@@ -104,7 +104,10 @@ export function generateContext(mySessionId, format) {
         ? (workerMap.get(mySessionId)?.name ?? "unknown")
         : "unknown";
     sections.push("");
-    sections.push(`[ctxflow] When making key architectural decisions or changing your approach,\nplease update .ctxflow/context/${mySessionId ?? myName}.md with a brief summary.`);
+    const contextPath = mySessionId
+        ? `.ctxflow/context/${mySessionId}.md`
+        : `.ctxflow/context/<your-session-id>.md`;
+    sections.push(`[ctxflow] When making key architectural decisions or changing your approach,\nplease update ${contextPath} with a brief summary.`);
     const body = sections.join("\n");
     if (format === "hook") {
         return `<system-reminder>\n${body}\n</system-reminder>`;

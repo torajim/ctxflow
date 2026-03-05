@@ -416,10 +416,14 @@ program
   .description("Generate collaboration context")
   .option("--format <format>", "Output format (hook|text)", "text")
   .action(async (opts: { format: string }) => {
-    ensureDirs();
-    const sessionId = getCurrentSessionId();
-    const context = generateContext(sessionId, opts.format as "hook" | "text");
-    process.stdout.write(context);
+    try {
+      ensureDirs();
+      const sessionId = getCurrentSessionId();
+      const context = generateContext(sessionId, opts.format as "hook" | "text");
+      process.stdout.write(context);
+    } catch {
+      // Silently exit — cwd may not exist or no session active
+    }
   });
 
 // ctxflow on-edit
@@ -428,6 +432,7 @@ program
   .description("Handle file edit event")
   .option("--file <filepath>", "Edited file path")
   .action(async (opts: { file?: string }) => {
+    try {
     ensureDirs();
 
     let filePath = opts.file;
@@ -478,6 +483,9 @@ program
       worker.status = "working";
       saveWorker(worker);
     }
+    } catch {
+      // Silently exit — cwd may not exist or no session active
+    }
   });
 
 // ctxflow on-session-end
@@ -485,15 +493,19 @@ program
   .command("on-session-end")
   .description("Handle session end")
   .action(async () => {
-    ensureDirs();
-    const sessionId = getCurrentSessionId();
-    if (!sessionId) return;
+    try {
+      ensureDirs();
+      const sessionId = getCurrentSessionId();
+      if (!sessionId) return;
 
-    const worker = getWorker(sessionId);
-    if (!worker) return;
+      const worker = getWorker(sessionId);
+      if (!worker) return;
 
-    worker.status = "idle";
-    saveWorker(worker);
+      worker.status = "idle";
+      saveWorker(worker);
+    } catch {
+      // Silently exit — cwd may not exist or no session active
+    }
   });
 
 // ctxflow daemon (hidden)

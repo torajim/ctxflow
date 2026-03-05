@@ -350,10 +350,15 @@ program
     .description("Generate collaboration context")
     .option("--format <format>", "Output format (hook|text)", "text")
     .action(async (opts) => {
-    ensureDirs();
-    const sessionId = getCurrentSessionId();
-    const context = generateContext(sessionId, opts.format);
-    process.stdout.write(context);
+    try {
+        ensureDirs();
+        const sessionId = getCurrentSessionId();
+        const context = generateContext(sessionId, opts.format);
+        process.stdout.write(context);
+    }
+    catch {
+        // Silently exit — cwd may not exist or no session active
+    }
 });
 // ctxflow on-edit
 program
@@ -361,51 +366,56 @@ program
     .description("Handle file edit event")
     .option("--file <filepath>", "Edited file path")
     .action(async (opts) => {
-    ensureDirs();
-    let filePath = opts.file;
-    // Read stdin for PostToolUse hook input
-    if (!filePath) {
-        try {
-            const input = await readStdin();
-            if (input) { // Size already limited by readStdin()
-                const parsed = JSON.parse(input);
-                if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-                    const candidate = parsed?.tool_input?.file_path ??
-                        parsed?.tool_input?.file ??
-                        parsed?.tool_input?.path;
-                    if (typeof candidate === "string") {
-                        filePath = candidate;
+    try {
+        ensureDirs();
+        let filePath = opts.file;
+        // Read stdin for PostToolUse hook input
+        if (!filePath) {
+            try {
+                const input = await readStdin();
+                if (input) { // Size already limited by readStdin()
+                    const parsed = JSON.parse(input);
+                    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                        const candidate = parsed?.tool_input?.file_path ??
+                            parsed?.tool_input?.file ??
+                            parsed?.tool_input?.path;
+                        if (typeof candidate === "string") {
+                            filePath = candidate;
+                        }
                     }
                 }
             }
+            catch {
+                // Ignore parse errors
+            }
         }
-        catch {
-            // Ignore parse errors
+        if (!filePath || typeof filePath !== "string")
+            return;
+        // Reject null bytes
+        if (filePath.includes("\0"))
+            return;
+        // Validate resolved path is within project root (safe against symlinks and traversal)
+        const nodePath = (await import("node:path")).default;
+        const projectRoot = (await import("./core/paths.js")).getProjectRoot();
+        const resolvedPath = nodePath.resolve(filePath);
+        const resolvedRoot = nodePath.resolve(projectRoot);
+        const relative = nodePath.relative(resolvedRoot, resolvedPath);
+        if (relative.startsWith("..") || nodePath.isAbsolute(relative))
+            return;
+        const sessionId = getCurrentSessionId();
+        if (!sessionId)
+            return;
+        const filename = filePath.split("/").pop() ?? filePath;
+        addFileChange(sessionId, filePath, `+modified ${filename}`);
+        // Mark worker as actively working on file edit
+        const worker = getWorker(sessionId);
+        if (worker && worker.status !== "working") {
+            worker.status = "working";
+            saveWorker(worker);
         }
     }
-    if (!filePath || typeof filePath !== "string")
-        return;
-    // Reject null bytes
-    if (filePath.includes("\0"))
-        return;
-    // Validate resolved path is within project root (safe against symlinks and traversal)
-    const nodePath = (await import("node:path")).default;
-    const projectRoot = (await import("./core/paths.js")).getProjectRoot();
-    const resolvedPath = nodePath.resolve(filePath);
-    const resolvedRoot = nodePath.resolve(projectRoot);
-    const relative = nodePath.relative(resolvedRoot, resolvedPath);
-    if (relative.startsWith("..") || nodePath.isAbsolute(relative))
-        return;
-    const sessionId = getCurrentSessionId();
-    if (!sessionId)
-        return;
-    const filename = filePath.split("/").pop() ?? filePath;
-    addFileChange(sessionId, filePath, `+modified ${filename}`);
-    // Mark worker as actively working on file edit
-    const worker = getWorker(sessionId);
-    if (worker && worker.status !== "working") {
-        worker.status = "working";
-        saveWorker(worker);
+    catch {
+        // Silently exit — cwd may not exist or no session active
     }
 });
 // ctxflow on-session-end
@@ -413,15 +423,20 @@ program
     .command("on-session-end")
     .description("Handle session end")
     .action(async () => {
-    ensureDirs();
-    const sessionId = getCurrentSessionId();
-    if (!sessionId)
-        return;
-    const worker = getWorker(sessionId);
-    if (!worker)
-        return;
-    worker.status = "idle";
-    saveWorker(worker);
+    try {
+        ensureDirs();
+        const sessionId = getCurrentSessionId();
+        if (!sessionId)
+            return;
+        const worker = getWorker(sessionId);
+        if (!worker)
+            return;
+        worker.status = "idle";
+        saveWorker(worker);
+    }
+    catch {
+        // Silently exit — cwd may not exist or no session active
+    }
 });
 // ctxflow daemon (hidden)
 program

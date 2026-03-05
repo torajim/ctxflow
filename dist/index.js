@@ -266,7 +266,10 @@ program
             // Ignore parse errors
         }
     }
-    if (!filePath)
+    if (!filePath || typeof filePath !== "string")
+        return;
+    // Reject paths that attempt directory traversal
+    if (filePath.includes("\0") || /\.\.[/\\]/.test(filePath))
         return;
     const sessionId = getCurrentSessionId();
     if (!sessionId)

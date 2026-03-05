@@ -39,7 +39,7 @@ function formatWorkerSummary(worker, taskDesc, contextContent) {
         line += `\n${files}`;
     return line;
 }
-function formatWorkerDetailed(worker, taskDesc, contextContent, workerConflicts) {
+function formatWorkerDetailed(worker, taskDesc, contextContent, workerConflicts, workerMap) {
     const desc = taskDesc ?? "(no task)";
     const lines = [];
     lines.push(`- ${displayLabel(worker)}: "${desc}"`);
@@ -51,19 +51,17 @@ function formatWorkerDetailed(worker, taskDesc, contextContent, workerConflicts)
         lines.push(files);
     for (const c of workerConflicts) {
         const workerNames = c.workers.map((sid) => {
-            const w = allWorkersCache.get(sid);
+            const w = workerMap.get(sid);
             return w ? displayLabel(w) : sid;
         });
         lines.push(`  ⚠ conflict: ${c.file} (${workerNames.join(", ")})`);
     }
     return lines.join("\n");
 }
-// Cache for resolving session IDs to display names in conflict output
-let allWorkersCache = new Map();
 export function generateContext(mySessionId, format) {
     const allWorkers = listWorkers();
-    // Build cache for display name resolution
-    allWorkersCache = new Map(allWorkers.map((w) => [w.session_id, w]));
+    // Build lookup map for display name resolution
+    const workerMap = new Map(allWorkers.map((w) => [w.session_id, w]));
     const otherWorkers = allWorkers.filter((w) => w.session_id !== mySessionId &&
         (w.status === "working" || w.status === "idle"));
     if (otherWorkers.length === 0)
@@ -82,7 +80,7 @@ export function generateContext(mySessionId, format) {
             const task = worker.task_id ? getTask(worker.task_id) : null;
             const ctx = readContextFile(worker.session_id);
             const workerConflicts = conflicts.filter((c) => c.workers.includes(worker.session_id));
-            sections.push(formatWorkerDetailed(worker, task?.description ?? null, ctx, workerConflicts));
+            sections.push(formatWorkerDetailed(worker, task?.description ?? null, ctx, workerConflicts, workerMap));
         }
         if (otherCount > 0) {
             sections.push(`and ${otherCount} more working (no conflicts)`);
@@ -94,7 +92,7 @@ export function generateContext(mySessionId, format) {
             const ctx = readContextFile(worker.session_id);
             if (hasConflicts && isConflicting(worker.session_id, conflicts)) {
                 const workerConflicts = conflicts.filter((c) => c.workers.includes(worker.session_id));
-                sections.push(formatWorkerDetailed(worker, task?.description ?? null, ctx, workerConflicts));
+                sections.push(formatWorkerDetailed(worker, task?.description ?? null, ctx, workerConflicts, workerMap));
             }
             else {
                 sections.push(formatWorkerSummary(worker, task?.description ?? null, ctx));
@@ -103,7 +101,7 @@ export function generateContext(mySessionId, format) {
     }
     // Determine display name for the instruction
     const myName = mySessionId
-        ? (allWorkersCache.get(mySessionId)?.name ?? "unknown")
+        ? (workerMap.get(mySessionId)?.name ?? "unknown")
         : "unknown";
     sections.push("");
     sections.push(`[ctxflow] When making key architectural decisions or changing your approach,\nplease update .ctxflow/context/${mySessionId ?? myName}.md with a brief summary.`);

@@ -52,6 +52,7 @@ function formatWorkerDetailed(
   taskDesc: string | null,
   contextContent: string | null,
   workerConflicts: Conflict[],
+  workerMap: Map<string, Worker>,
 ): string {
   const desc = taskDesc ?? "(no task)";
   const lines: string[] = [];
@@ -63,7 +64,7 @@ function formatWorkerDetailed(
   if (files) lines.push(files);
   for (const c of workerConflicts) {
     const workerNames = c.workers.map((sid) => {
-      const w = allWorkersCache.get(sid);
+      const w = workerMap.get(sid);
       return w ? displayLabel(w) : sid;
     });
     lines.push(`  ⚠ conflict: ${c.file} (${workerNames.join(", ")})`);
@@ -71,17 +72,14 @@ function formatWorkerDetailed(
   return lines.join("\n");
 }
 
-// Cache for resolving session IDs to display names in conflict output
-let allWorkersCache = new Map<string, Worker>();
-
 export function generateContext(
   mySessionId: string | null,
   format: "hook" | "text",
 ): string {
   const allWorkers = listWorkers();
 
-  // Build cache for display name resolution
-  allWorkersCache = new Map(allWorkers.map((w) => [w.session_id, w]));
+  // Build lookup map for display name resolution
+  const workerMap = new Map(allWorkers.map((w) => [w.session_id, w]));
 
   const otherWorkers = allWorkers.filter(
     (w) =>
@@ -118,6 +116,7 @@ export function generateContext(
           task?.description ?? null,
           ctx,
           workerConflicts,
+          workerMap,
         ),
       );
     }
@@ -140,6 +139,7 @@ export function generateContext(
             task?.description ?? null,
             ctx,
             workerConflicts,
+            workerMap,
           ),
         );
       } else {
@@ -152,7 +152,7 @@ export function generateContext(
 
   // Determine display name for the instruction
   const myName = mySessionId
-    ? (allWorkersCache.get(mySessionId)?.name ?? "unknown")
+    ? (workerMap.get(mySessionId)?.name ?? "unknown")
     : "unknown";
 
   sections.push("");

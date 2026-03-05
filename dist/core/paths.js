@@ -1,5 +1,12 @@
 import path from "node:path";
 import fs from "node:fs";
+function sanitizeId(id) {
+    const sanitized = path.basename(id);
+    if (!sanitized || sanitized === "." || sanitized === "..") {
+        throw new Error(`Invalid ID: ${id}`);
+    }
+    return sanitized;
+}
 let projectRoot = null;
 export function setProjectRoot(root) {
     projectRoot = root;
@@ -25,16 +32,16 @@ export function sessionsDir() {
     return path.join(ctxflowDir(), "sessions");
 }
 export function workerFile(sessionId) {
-    return path.join(workersDir(), `${sessionId}.json`);
+    return path.join(workersDir(), `${sanitizeId(sessionId)}.json`);
 }
 export function taskFile(id) {
-    return path.join(tasksDir(), `${id}.json`);
+    return path.join(tasksDir(), `${sanitizeId(id)}.json`);
 }
 export function contextFile(sessionId) {
-    return path.join(contextDir(), `${sessionId}.md`);
+    return path.join(contextDir(), `${sanitizeId(sessionId)}.md`);
 }
 export function sessionFile(sessionId) {
-    return path.join(sessionsDir(), `${sessionId}.json`);
+    return path.join(sessionsDir(), `${sanitizeId(sessionId)}.json`);
 }
 export function daemonPidFile() {
     return path.join(ctxflowDir(), "daemon.pid");

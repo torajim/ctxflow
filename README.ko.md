@@ -18,10 +18,11 @@
 
 ## 특징
 
-- **명령어 3개.** 끝. `ctxflow`, `ctxflow start`, `ctxflow stop`.
-- **설정 불필요.** git remote 자동 감지, 동기화 채널 생성, Claude Code 훅 설치 — 첫 `start`에 전부 자동 처리.
+- **인터랙티브 CLI.** `ctxflow`로 활성 작업 확인, 참여 또는 새로 생성 — 한 번에 처리.
+- **설정 불필요.** git remote 자동 감지, 동기화 채널 생성, Claude Code 훅 설치 — 첫 실행에 전부 자동 처리.
+- **세션 기반.** 각 터미널 세션이 고유 세션 ID를 부여받아, 같은 사용자도 여러 작업을 동시에 수행 가능.
 - **로컬 우선.** 오프라인에서도 작동, 네트워크 가능 시 동기화.
-- **설계상 머지 충돌 없음.** 각 워커가 자기 파일만 수정 — 구조적으로 충돌 불가능.
+- **설계상 머지 충돌 없음.** 각 워커가 자기 파일만 수정 (세션 ID 기반) — 구조적으로 충돌 불가능.
 - **적응적 컨텍스트 주입.** 평소엔 요약, 파일 겹침 감지 시 상세 경고.
 - **백그라운드 데몬.** 5초 간격 동기화, 사용자에게 투명하게 동작.
 
@@ -54,6 +55,7 @@
 git clone https://github.com/torajim/ctxflow.git
 cd ctxflow
 npm install
+npm run build
 npm link
 ```
 
@@ -73,61 +75,70 @@ npm unlink -g ctxflow
 
 #### 1. 작업 시작
 
-프로젝트 디렉토리에서 터미널을 열고 작업을 시작합니다:
+프로젝트 디렉토리에서 터미널을 열고 실행합니다:
 
 ```bash
 cd my-project
-ctxflow start "JWT 인증 미들웨어 구현"
+ctxflow
 ```
 
 첫 실행 시 ctxflow가 자동으로:
-- 이름을 묻습니다 (워커 식별자로 사용)
+- `git config user.name`을 워커 식별자로 사용합니다 (미설정 시 입력 요청)
+- 활성 작업 목록을 표시하거나 새 작업 생성을 안내합니다
 - `.ctxflow/` 디렉토리를 생성합니다 (자동으로 gitignore에 추가)
 - Claude Code 훅을 `.claude/settings.local.json`에 설치합니다
 - 백그라운드 동기화 데몬을 시작합니다
 
-#### 2. LLM과 코딩
-
-평소처럼 Claude Code를 시작합니다:
+직접 새 작업을 시작할 수도 있습니다:
 
 ```bash
+ctxflow start "JWT 인증 미들웨어 구현"
+```
+
+#### 2. 세션 트래킹 활성화 후 LLM과 코딩
+
+작업 시작 후 ctxflow가 세션 ID를 표시합니다. 환경변수로 설정한 뒤 Claude Code를 시작합니다:
+
+```bash
+export CTXFLOW_SESSION=<session-id>
 claude
 ```
 
-이게 전부입니다. 이제부터 Claude가 도구를 사용할 때마다, 팀원들이 무엇을 하고 있는지 자동으로 컨텍스트를 받습니다:
+이제부터 Claude가 도구를 사용할 때마다, 팀원들이 무엇을 하고 있는지 자동으로 컨텍스트를 받습니다:
 
 ```
-[ctxflow] 협업 상태:
+[ctxflow] collaboration status:
 - jimin: "사용자 프로필 API" | Drizzle ORM 사용, REST 엔드포인트 구축 중
-  최근: src/api/users.ts (+CRUD endpoints), src/db/schema.ts (+users 테이블)
+  recent: src/api/users.ts (+CRUD endpoints), src/db/schema.ts (+users 테이블)
 
-[ctxflow] 주요 아키텍처 결정이나 접근 방식 변경 시,
-.ctxflow/context/stefano.md 파일에 현재 접근 방식을 간단히 기록해주세요.
+[ctxflow] When making key architectural decisions or changing your approach,
+please update .ctxflow/context/<session-id>.md with a brief summary.
 ```
 
 #### 3. 팀원이 참여
 
-다른 머신(또는 터미널)에서 팀원이 같은 방식으로 참여합니다:
+다른 머신(또는 터미널)에서 팀원이 기존 작업에 참여하거나 새 작업을 만듭니다:
 
 ```bash
 cd my-project          # 같은 리포, 같은 remote
-ctxflow                # 현재 상황 확인
+ctxflow                # 활성 작업 확인 및 참여
 ```
 
 ```
-ctxflow - 협업 상태
+ctxflow - collaboration status
 
-작업 목록:
-  JWT 인증 미들웨어 구현 (abc123)
-    stefano (working, 방금 전)
+Active tasks:
+  [1] JWT 인증 미들웨어 구현 (abc123)
+      stefano (working, 방금 전)
+  [N] Create a new task
 
-  사용자 프로필 API (def456)
-    jimin (working, 3초 전)
+Select a task to join, or N to create new:
 ```
+
+또는 작업 ID로 직접 참여:
 
 ```bash
-ctxflow start "관리자 대시보드 추가"
-claude
+ctxflow join abc123
 ```
 
 팀원의 Claude는 이제 자동으로 나의 작업 컨텍스트를 보고, 나의 Claude도 팀원의 컨텍스트를 봅니다.
@@ -137,11 +148,11 @@ claude
 두 워커가 같은 파일을 수정하면, ctxflow가 자동으로 상세 모드로 전환합니다:
 
 ```
-[ctxflow] 협업 상태:
+[ctxflow] collaboration status:
 - jimin: "사용자 프로필 API" | Drizzle ORM, REST 패턴
-  최근: src/api/users.ts (+CRUD endpoints)
+  recent: src/api/users.ts (+CRUD endpoints)
 
-  ⚠ 충돌: src/types/index.ts (stefano, jimin)
+  ⚠ conflict: src/types/index.ts (stefano, jimin)
 
 [ctxflow] ...
 ```
@@ -152,28 +163,39 @@ claude
 ctxflow stop
 ```
 
+여러 세션이 활성화되어 있으면 특정 세션을 지정합니다:
+
+```bash
+ctxflow stop --session <session-id>
+```
+
 ### 프로젝트 구조
 
 ```
-.ctxflow/                        # 자동 생성, gitignore됨
+.ctxflow/                          # 자동 생성, gitignore됨
 ├── tasks/
-│   └── {task-id}.json           # 태스크 메타데이터
+│   └── {task-id}.json             # 태스크 메타데이터
 ├── workers/
-│   ├── stefano.json             # 각 워커가 자기 파일만 수정
-│   └── jimin.json               # → 머지 충돌 구조적 불가능
+│   └── {session-id}.json          # 각 세션이 자기 파일만 수정
+├── sessions/
+│   └── {session-id}.json          # 세션-태스크 매핑
 ├── context/
-│   ├── stefano.md               # 접근 방식 메모 (LLM이 작성)
-│   └── jimin.md
-└── me.json                      # 로컬 신원 (동기화 안 됨)
+│   └── {session-id}.md            # 접근 방식 메모 (LLM이 작성)
+├── .sync/                         # orphan branch 동기화용 git 저장소
+├── daemon.pid                     # 백그라운드 데몬 PID
+└── debug.log                      # 데몬 디버그 로그
 ```
 
 ## CLI 레퍼런스
 
 | 명령어 | 설명 |
 |--------|------|
-| `ctxflow` | 활성 작업 및 참여자 표시 |
+| `ctxflow` | 인터랙티브 플로우: 활성 작업 표시, 참여 또는 생성 |
 | `ctxflow start <설명>` | 새 작업 생성 및 시작 |
+| `ctxflow join <task-id>` | 기존 활성 작업에 참여 |
+| `ctxflow list` | 모든 활성 작업 및 참여자 목록 |
 | `ctxflow stop` | 현재 작업 중단 |
+| `ctxflow stop --session <id>` | 특정 세션 중단 |
 
 ### 내부 명령어 (훅에서 사용)
 
@@ -183,12 +205,18 @@ ctxflow stop
 | `ctxflow on-edit --file <경로>` | 파일 변경 기록 |
 | `ctxflow on-session-end` | 워커를 idle 상태로 전환 |
 
+### 환경변수
+
+| 변수 | 설명 |
+|------|------|
+| `CTXFLOW_SESSION` | 현재 세션 ID. Claude Code 실행 전에 설정하여 훅이 세션을 식별할 수 있도록 합니다. |
+
 ## 동기화 방식
 
 ctxflow는 `ctxflow`라는 이름의 **git orphan branch**를 동기화 채널로 사용합니다:
 
 1. 이 브랜치에는 `.ctxflow/` 상태 파일만 존재합니다 (소스 코드 없음)
-2. 각 워커는 자기 파일만 수정합니다 (`workers/{name}.json`, `context/{name}.md`)
+2. 각 워커는 자기 파일만 수정합니다 (`workers/{session-id}.json`, `context/{session-id}.md`)
 3. 백그라운드 데몬이 5초마다 push/pull합니다
 4. 파일이 겹치지 않으므로 `git rebase`는 항상 깨끗하게 성공합니다
 

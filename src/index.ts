@@ -46,6 +46,7 @@ program
 // Default command: interactive flow
 program
   .action(async () => {
+    try {
     ensureDirs();
 
     // Ensure git repo with remote
@@ -148,6 +149,10 @@ program
 
     const selectedTask = activeTasks[idx - 1];
     await joinExistingTask(me, selectedTask.id, selectedTask.description);
+    } catch (err) {
+      console.error(chalk.red(`Error: ${err instanceof Error ? err.message : String(err)}`));
+      process.exit(1);
+    }
   });
 
 // ctxflow start <description>
@@ -156,14 +161,19 @@ program
   .description("Start a new task")
   .argument("<description...>", "Task description")
   .action(async (descParts: string[]) => {
-    ensureDirs();
-    const description = descParts.join(" ");
+    try {
+      ensureDirs();
+      const description = descParts.join(" ");
 
-    // Ensure git setup
-    await ensureGitSetup();
+      // Ensure git setup
+      await ensureGitSetup();
 
-    const me = await ensureIdentity();
-    await startNewTask(me, description);
+      const me = await ensureIdentity();
+      await startNewTask(me, description);
+    } catch (err) {
+      console.error(chalk.red(`Error: ${err instanceof Error ? err.message : String(err)}`));
+      process.exit(1);
+    }
   });
 
 // ctxflow list
@@ -171,6 +181,7 @@ program
   .command("list")
   .description("List all active tasks and participants")
   .action(async () => {
+    try {
     ensureDirs();
     const tasks = listTasks();
     const activeTasks = tasks.filter((t) => t.status === "active");
@@ -203,6 +214,10 @@ program
         }
       }
       console.log();
+    }
+    } catch (err) {
+      console.error(chalk.red(`Error: ${err instanceof Error ? err.message : String(err)}`));
+      process.exit(1);
     }
   });
 
@@ -239,6 +254,7 @@ program
   .description("Stop current task")
   .option("--session <id>", "Session ID to stop")
   .action(async (opts: { session?: string }) => {
+    try {
     ensureDirs();
 
     let sessionId = opts.session ?? getCurrentSessionId();
@@ -299,6 +315,10 @@ program
     stopDaemonIfIdle();
 
     console.log(chalk.yellow(`\nSession ${sessionId} stopped.\n`));
+    } catch (err) {
+      console.error(chalk.red(`Error: ${err instanceof Error ? err.message : String(err)}`));
+      process.exit(1);
+    }
   });
 
 // ctxflow join <task-id>
@@ -307,21 +327,26 @@ program
   .description("Join an existing task")
   .argument("<task-id>", "Task ID to join")
   .action(async (taskId: string) => {
-    ensureDirs();
-    await ensureGitSetup();
+    try {
+      ensureDirs();
+      await ensureGitSetup();
 
-    const task = getTask(taskId);
-    if (!task) {
-      console.error(chalk.red(`Task not found: ${taskId}`));
+      const task = getTask(taskId);
+      if (!task) {
+        console.error(chalk.red(`Task not found: ${taskId}`));
+        process.exit(1);
+      }
+      if (task.status !== "active") {
+        console.error(chalk.red(`Task is not active: ${taskId}`));
+        process.exit(1);
+      }
+
+      const me = await ensureIdentity();
+      await joinExistingTask(me, taskId, task.description);
+    } catch (err) {
+      console.error(chalk.red(`Error: ${err instanceof Error ? err.message : String(err)}`));
       process.exit(1);
     }
-    if (task.status !== "active") {
-      console.error(chalk.red(`Task is not active: ${taskId}`));
-      process.exit(1);
-    }
-
-    const me = await ensureIdentity();
-    await joinExistingTask(me, taskId, task.description);
   });
 
 // ctxflow cleanup
@@ -329,6 +354,7 @@ program
   .command("cleanup")
   .description("Remove disconnected workers and done tasks")
   .action(async () => {
+    try {
     ensureDirs();
     let cleaned = 0;
 
@@ -337,16 +363,20 @@ program
     const sessions = listSessions();
     const activeSessionIds = new Set(sessions.map((s) => s.session_id));
 
+    const paths = await import("./core/paths.js");
     for (const worker of workers) {
       if (worker.status === "disconnected" && !activeSessionIds.has(worker.session_id)) {
-        try {
-          fs.unlinkSync((await import("./core/paths.js")).workerFile(worker.session_id));
-          cleaned++;
-        } catch { /* ignore */ }
-        // Clean context file too
-        try {
-          fs.unlinkSync((await import("./core/paths.js")).contextFile(worker.session_id));
-        } catch { /* ignore */ }
+        // Re-check worker status before deleting to avoid TOCTOU race
+        const current = getWorker(worker.session_id);
+        if (current && current.status === "disconnected") {
+          try {
+            fs.unlinkSync(paths.workerFile(worker.session_id));
+            cleaned++;
+          } catch { /* ignore */ }
+          try {
+            fs.unlinkSync(paths.contextFile(worker.session_id));
+          } catch { /* ignore */ }
+        }
       }
     }
 
@@ -358,7 +388,7 @@ program
         const hasActive = participants.some((p) => p.status === "working" || p.status === "idle");
         if (!hasActive) {
           try {
-            fs.unlinkSync((await import("./core/paths.js")).taskFile(task.id));
+            fs.unlinkSync(paths.taskFile(task.id));
             cleaned++;
           } catch { /* ignore */ }
         }
@@ -366,6 +396,10 @@ program
     }
 
     console.log(chalk.green(`Cleaned up ${cleaned} stale entries.`));
+    } catch (err) {
+      console.error(chalk.red(`Error: ${err instanceof Error ? err.message : String(err)}`));
+      process.exit(1);
+    }
   });
 
 // ctxflow context
@@ -394,12 +428,17 @@ program
     if (!filePath) {
       try {
         const input = await readStdin();
-        if (input) {
+        if (input) { // Size already limited by readStdin()
           const parsed = JSON.parse(input);
-          filePath =
-            parsed?.tool_input?.file_path ??
-            parsed?.tool_input?.file ??
-            parsed?.tool_input?.path;
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            const candidate =
+              parsed?.tool_input?.file_path ??
+              parsed?.tool_input?.file ??
+              parsed?.tool_input?.path;
+            if (typeof candidate === "string") {
+              filePath = candidate;
+            }
+          }
         }
       } catch {
         // Ignore parse errors
@@ -411,11 +450,13 @@ program
     // Reject null bytes
     if (filePath.includes("\0")) return;
 
-    // Validate resolved path is within project root
-    const resolvedPath = (await import("node:path")).default.resolve(filePath);
+    // Validate resolved path is within project root (safe against symlinks and traversal)
+    const nodePath = (await import("node:path")).default;
     const projectRoot = (await import("./core/paths.js")).getProjectRoot();
-    const resolvedRoot = (await import("node:path")).default.resolve(projectRoot);
-    if (!resolvedPath.startsWith(resolvedRoot + "/") && resolvedPath !== resolvedRoot) return;
+    const resolvedPath = nodePath.resolve(filePath);
+    const resolvedRoot = nodePath.resolve(projectRoot);
+    const relative = nodePath.relative(resolvedRoot, resolvedPath);
+    if (relative.startsWith("..") || nodePath.isAbsolute(relative)) return;
 
     const sessionId = getCurrentSessionId();
     if (!sessionId) return;
@@ -578,6 +619,8 @@ function promptInput(prompt: string): Promise<string> {
   });
 }
 
+const STDIN_MAX_BYTES = 1_048_576; // 1MB
+
 function readStdin(): Promise<string> {
   return new Promise((resolve) => {
     if (process.stdin.isTTY) {
@@ -587,21 +630,27 @@ function readStdin(): Promise<string> {
     let data = "";
     let resolved = false;
     process.stdin.setEncoding("utf-8");
-    process.stdin.on("data", (chunk) => {
+
+    const finish = (result: string): void => {
+      if (resolved) return;
+      resolved = true;
+      process.stdin.removeListener("data", onData);
+      process.stdin.removeListener("end", onEnd);
+      resolve(result);
+    };
+    const onData = (chunk: string): void => {
       data += chunk;
-    });
-    process.stdin.on("end", () => {
-      if (!resolved) {
-        resolved = true;
-        resolve(data);
+      if (data.length > STDIN_MAX_BYTES) {
+        finish(""); // Reject oversized input
       }
-    });
-    setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        resolve(data);
-      }
-    }, 100);
+    };
+    const onEnd = (): void => {
+      finish(data);
+    };
+
+    process.stdin.on("data", onData);
+    process.stdin.on("end", onEnd);
+    setTimeout(() => finish(data), 100);
   });
 }
 

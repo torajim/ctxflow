@@ -181,8 +181,10 @@ export async function syncPull() {
             try {
                 await git.stash(["pop"]);
             }
-            catch {
-                logDebug("stash pop failed after reset — local changes saved in stash");
+            catch (popErr) {
+                logDebug(`WARNING: stash pop failed after reset — local changes saved in git stash. ` +
+                    `Run 'cd .ctxflow && GIT_DIR=.sync git stash list' to inspect. ` +
+                    `Error: ${popErr instanceof Error ? popErr.message : String(popErr)}`);
             }
         }
     }

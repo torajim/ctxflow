@@ -7,69 +7,77 @@ import { loadConfig } from "./core/config.js";
 let syncTimeout = null;
 let syncing = false;
 let shutdownRequested = false;
+let releaseDaemonLock = null;
 function writePid() {
     fs.writeFileSync(daemonPidFile(), String(process.pid));
 }
 function removePidFile() {
     try {
-        fs.unlinkSync(daemonPidFile());
+        // Only remove if we own the PID file
+        const content = fs.readFileSync(daemonPidFile(), "utf-8").trim();
+        if (parseInt(content, 10) === process.pid) {
+            fs.unlinkSync(daemonPidFile());
+        }
     }
     catch {
-        // Already removed
-    }
-}
-function removeLockFile() {
-    try {
-        fs.unlinkSync(daemonLockFile());
-    }
-    catch {
-        // Already removed
+        // Already removed or unreadable
     }
 }
 /**
- * Acquire daemon lock using atomic file creation (O_EXCL).
- * Returns true if lock acquired, false if another daemon holds it.
+ * Acquire daemon lock using mkdir (atomic, same mechanism as lock.ts).
+ * Returns a release function on success, null if another daemon holds it.
  */
 function acquireDaemonLock() {
+    const lockPath = daemonLockFile();
     try {
-        fs.writeFileSync(daemonLockFile(), String(process.pid), { flag: "wx" });
-        return true;
+        fs.mkdirSync(lockPath);
     }
     catch {
-        // Lock file exists — check if holder is alive
+        // Lock exists — check if holder is alive
         try {
-            const pid = parseInt(fs.readFileSync(daemonLockFile(), "utf-8").trim(), 10);
+            const infoPath = `${lockPath}/pid`;
+            const raw = fs.readFileSync(infoPath, "utf-8").trim();
+            let pid;
+            try {
+                const info = JSON.parse(raw);
+                pid = typeof info?.pid === "number" ? info.pid : NaN;
+            }
+            catch {
+                pid = parseInt(raw, 10);
+            }
             if (!isNaN(pid) && pid !== process.pid) {
                 try {
                     process.kill(pid, 0);
-                    return false; // Another daemon is alive
+                    return null; // Another daemon is alive
                 }
                 catch {
-                    // Holder is dead — remove stale lock and retry
-                    removeLockFile();
-                    try {
-                        fs.writeFileSync(daemonLockFile(), String(process.pid), { flag: "wx" });
-                        return true;
-                    }
-                    catch {
-                        return false;
-                    }
+                    // Holder is dead — reclaim
                 }
+            }
+            // Remove stale lock and retry once
+            fs.rmSync(lockPath, { recursive: true, force: true });
+            try {
+                fs.mkdirSync(lockPath);
+            }
+            catch {
+                return null; // Lost race to another process
             }
         }
         catch {
-            // Can't read lock file — try to remove and retry once
-            removeLockFile();
-            try {
-                fs.writeFileSync(daemonLockFile(), String(process.pid), { flag: "wx" });
-                return true;
-            }
-            catch {
-                return false;
-            }
+            return null; // Can't read lock info
         }
-        return false;
     }
+    // Write PID+timestamp into lock dir for staleness detection
+    try {
+        fs.writeFileSync(`${lockPath}/pid`, JSON.stringify({ pid: process.pid, ts: Date.now() }));
+    }
+    catch { /* non-critical */ }
+    return () => {
+        try {
+            fs.rmSync(lockPath, { recursive: true, force: true });
+        }
+        catch { /* already released */ }
+    };
 }
 function markInactiveWorkers() {
     const config = loadConfig();
@@ -115,11 +123,19 @@ async function syncLoop() {
             return;
         }
         updateHeartbeat(sessionId);
+        // Stop daemon if our session was removed externally
+        const activeSessions = listSessions();
+        if (activeSessions.length === 0) {
+            logDebug("No active sessions remaining, daemon shutting down");
+            gracefulShutdown();
+            return;
+        }
         if (!(await hasGitRemote()))
             return;
         await ensureCtxflowBranch();
         await fullSync(sessionId);
         markInactiveWorkers();
+        cleanupOrphanedSessions();
     }
     catch (err) {
         logDebug(`sync error: ${err instanceof Error ? err.message : String(err)}`);
@@ -132,10 +148,15 @@ async function syncLoop() {
 function scheduleNextSync() {
     if (shutdownRequested)
         return;
-    const config = loadConfig();
-    syncTimeout = setTimeout(() => {
-        syncLoop();
-    }, config.syncIntervalMs);
+    try {
+        const config = loadConfig();
+        syncTimeout = setTimeout(() => {
+            syncLoop();
+        }, config.syncIntervalMs);
+    }
+    catch (err) {
+        logDebug(`scheduleNextSync error: ${err instanceof Error ? err.message : String(err)}`);
+    }
 }
 export function isDaemonRunning() {
     try {
@@ -159,35 +180,57 @@ export function stopDaemon() {
     catch {
         // Process may already be dead
     }
-    removePidFile();
+    // Force remove PID file (stopDaemon is an explicit user action)
+    try {
+        fs.unlinkSync(daemonPidFile());
+    }
+    catch { /* ignore */ }
 }
 function gracefulShutdown() {
+    if (shutdownRequested)
+        return; // Prevent re-entry
     shutdownRequested = true;
     if (syncTimeout) {
         clearTimeout(syncTimeout);
         syncTimeout = null;
     }
-    removePidFile();
-    removeLockFile();
-    logDebug("Daemon stopped gracefully");
-    process.exit(0);
+    // Wait for in-flight sync to finish (max 10s)
+    const deadline = Date.now() + 10_000;
+    const waitForSync = () => {
+        if (!syncing || Date.now() > deadline) {
+            removePidFile();
+            if (releaseDaemonLock) {
+                releaseDaemonLock();
+                releaseDaemonLock = null;
+            }
+            logDebug("Daemon stopped gracefully");
+            process.exit(0);
+        }
+        setTimeout(waitForSync, 100);
+    };
+    waitForSync();
 }
 export async function runDaemon() {
-    if (!acquireDaemonLock()) {
+    const release = acquireDaemonLock();
+    if (!release) {
         logDebug("Another daemon holds the lock, exiting.");
         return;
     }
-    if (isDaemonRunning()) {
-        removeLockFile();
-        logDebug("Daemon already running, exiting.");
-        return;
+    releaseDaemonLock = release;
+    try {
+        writePid();
+        process.on("SIGTERM", gracefulShutdown);
+        process.on("SIGINT", gracefulShutdown);
+        const sessionId = getCurrentSessionId();
+        logDebug(`Daemon started (pid ${process.pid}, session ${sessionId ?? "none"})`);
+        // Run once immediately — scheduleNextSync is called in the finally block
+        await syncLoop();
     }
-    writePid();
-    process.on("SIGTERM", gracefulShutdown);
-    process.on("SIGINT", gracefulShutdown);
-    const sessionId = getCurrentSessionId();
-    logDebug(`Daemon started (pid ${process.pid}, session ${sessionId ?? "none"})`);
-    // Run once immediately — scheduleNextSync is called in the finally block
-    await syncLoop();
+    catch (err) {
+        logDebug(`Daemon fatal error: ${err instanceof Error ? err.message : String(err)}`);
+        removePidFile();
+        release();
+        releaseDaemonLock = null;
+    }
 }
 //# sourceMappingURL=daemon.js.map

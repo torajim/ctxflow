@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { nanoid } from "nanoid";
 import {
@@ -269,16 +270,27 @@ export function addFileChange(
   summary: string,
 ): void {
   const maxFiles = loadConfig().maxFilesTouched;
+
+  // Normalize to relative path from project root to avoid leaking absolute paths
+  let relativePath: string;
+  if (path.isAbsolute(filePath)) {
+    relativePath = path.relative(getProjectRoot(), filePath);
+    // Skip paths that escape the project root
+    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) return;
+  } else {
+    relativePath = filePath;
+  }
+
   withLock(`worker-${sessionId}`, () => {
     const worker = getWorker(sessionId);
     if (!worker) return;
-    const existing = worker.files_touched.find((f) => f.path === filePath);
+    const existing = worker.files_touched.find((f) => f.path === relativePath);
     if (existing) {
       existing.summary = summary;
       existing.updated_at = new Date().toISOString();
     } else {
       worker.files_touched.push({
-        path: filePath,
+        path: relativePath,
         summary,
         updated_at: new Date().toISOString(),
       });

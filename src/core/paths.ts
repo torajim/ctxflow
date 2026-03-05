@@ -2,15 +2,14 @@ import path from "node:path";
 import fs from "node:fs";
 
 function sanitizeId(id: string): string {
-  const sanitized = path.basename(id);
-  if (!sanitized || sanitized === "." || sanitized === "..") {
+  // Allow only alphanumeric, dash, underscore (nanoid chars)
+  if (!id || !/^[\w-]+$/.test(id)) {
     throw new Error(`Invalid ID: ${id}`);
   }
-  // Allow only alphanumeric, dash, underscore (nanoid chars)
-  if (!/^[\w-]+$/.test(sanitized)) {
-    throw new Error(`Invalid ID characters: ${id}`);
+  if (id.length > 128) {
+    throw new Error(`ID too long (max 128 chars): ${id}`);
   }
-  return sanitized;
+  return id;
 }
 
 /**

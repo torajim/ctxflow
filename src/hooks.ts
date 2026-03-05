@@ -75,8 +75,12 @@ export function installHooks(): void {
       config = JSON.parse(raw) as HooksConfig;
     } catch {
       // Backup corrupted file before overwriting
-      const backupFile = settingsFile + ".backup." + Date.now();
-      fs.copyFileSync(settingsFile, backupFile);
+      try {
+        const backupFile = settingsFile + ".backup." + Date.now();
+        fs.copyFileSync(settingsFile, backupFile);
+      } catch {
+        // If backup fails, log but continue — user still has the original on disk
+      }
       config = {};
     }
   }

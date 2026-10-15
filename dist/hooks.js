@@ -1,7 +1,21 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getProjectRoot } from "./core/paths.js";
+// Claude Code hook timeouts are in seconds.
+const HOOK_TIMEOUT_SECONDS = 10;
 const CTXFLOW_HOOKS = {
+    SessionStart: [
+        {
+            matcher: "",
+            hooks: [
+                {
+                    type: "command",
+                    command: "ctxflow on-session-start",
+                    timeout: HOOK_TIMEOUT_SECONDS,
+                },
+            ],
+        },
+    ],
     PreToolUse: [
         {
             matcher: "",
@@ -9,7 +23,7 @@ const CTXFLOW_HOOKS = {
                 {
                     type: "command",
                     command: "ctxflow context --format hook",
-                    timeout: 5000,
+                    timeout: HOOK_TIMEOUT_SECONDS,
                 },
             ],
         },
@@ -21,7 +35,7 @@ const CTXFLOW_HOOKS = {
                 {
                     type: "command",
                     command: "ctxflow on-edit",
-                    timeout: 5000,
+                    timeout: HOOK_TIMEOUT_SECONDS,
                 },
             ],
         },
@@ -33,7 +47,7 @@ const CTXFLOW_HOOKS = {
                 {
                     type: "command",
                     command: "ctxflow on-session-end",
-                    timeout: 5000,
+                    timeout: HOOK_TIMEOUT_SECONDS,
                 },
             ],
         },
@@ -69,10 +83,17 @@ export function installHooks() {
             config.hooks[event] = [];
         }
         for (const matcher of matchers) {
-            const exists = config.hooks[event].some((existing) => existing.matcher === matcher.matcher &&
-                existing.hooks.some((h) => matcher.hooks.some((mh) => mh.command === h.command)));
-            if (!exists) {
+            const existing = config.hooks[event].find((e) => e.matcher === matcher.matcher &&
+                e.hooks.some((h) => matcher.hooks.some((mh) => mh.command === h.command)));
+            if (!existing) {
                 config.hooks[event].push(matcher);
+                continue;
+            }
+            // Older versions wrote timeouts in milliseconds (5000s in practice); fix them up.
+            for (const h of existing.hooks) {
+                const ours = matcher.hooks.find((mh) => mh.command === h.command);
+                if (ours)
+                    h.timeout = ours.timeout;
             }
         }
     }

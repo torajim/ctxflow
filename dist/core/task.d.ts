@@ -5,7 +5,22 @@ export declare function getSession(sessionId: string): Session | null;
 export declare function updateSessionDaemonPid(sessionId: string, pid: number): void;
 export declare function listSessions(): Session[];
 export declare function removeSession(sessionId: string): void;
-export declare function getCurrentSessionId(): string | null;
+/** Bind a Claude Code session to a ctxflow session (overwrites any previous binding). */
+export declare function bindClaudeSession(claudeSessionId: string, sessionId: string): void;
+export declare function removeBindingsFor(sessionId: string): void;
+/**
+ * Resolve which ctxflow session the caller belongs to.
+ *
+ * Several terminals can share one project directory, so the project-wide
+ * current-session file alone is ambiguous. Order:
+ * 1. CTXFLOW_SESSION env var (explicit)
+ * 2. Hooks pass the Claude Code session ID: use its binding, or claim the
+ *    current-session file if no other Claude session has claimed it yet.
+ * 3. CLI commands run inside Claude's Bash tool: the binding of
+ *    CLAUDE_CODE_SESSION_ID, read-only.
+ * 4. Otherwise: the current-session file.
+ */
+export declare function getCurrentSessionId(claudeSessionId?: string | null): string | null;
 export declare function writeCurrentSession(sessionId: string): void;
 export declare function clearCurrentSession(sessionId: string): void;
 export declare function getCurrentSession(): Session | null;

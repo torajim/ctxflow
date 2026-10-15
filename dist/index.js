@@ -5,8 +5,9 @@ import fs from "node:fs";
 import readline from "node:readline";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { getMe, createTask, getTask, listTasks, updateTaskStatus, getWorker, saveWorker, createWorker, listWorkers, getTaskParticipants, addFileChange, createSession, getCurrentSessionId, updateSessionDaemonPid, removeSession, listSessions, writeCurrentSession, clearCurrentSession, } from "./core/task.js";
-import { hasGitRemote, isGitRepo, initGitWithRemote } from "./core/sync.js";
+import { getMe, createTask, getTask, listTasks, updateTaskStatus, getWorker, saveWorker, createWorker, listWorkers, getTaskParticipants, addFileChange, createSession, getCurrentSessionId, updateSessionDaemonPid, removeSession, listSessions, writeCurrentSession, clearCurrentSession, bindClaudeSession, } from "./core/task.js";
+import { hasGitRemote, ensureCtxflowBranch, isGitRepo, initGitWithRemote, syncPush, syncPull } from "./core/sync.js";
+import { logDebug } from "./core/log.js";
 import { generateContext } from "./core/context.js";
 import path from "node:path";
 import { ensureDirs, daemonPidFile, contextFile, getProjectRoot, } from "./core/paths.js";
@@ -53,6 +54,7 @@ program
             me = name.trim();
             console.log(chalk.dim(`git user.name set to "${me}"`));
         }
+        await refreshFromRemote();
         const tasks = listTasks();
         const activeTasks = tasks.filter((t) => t.status === "active");
         console.log(chalk.bold("\nctxflow - collaboration status\n"));
@@ -140,6 +142,7 @@ program
     .action(async () => {
     try {
         ensureDirs();
+        await refreshFromRemote();
         const tasks = listTasks();
         const activeTasks = tasks.filter((t) => t.status === "active");
         console.log(chalk.bold("\nctxflow - active tasks\n"));
@@ -251,6 +254,15 @@ program
         worker.status = "disconnected";
         worker.task_id = null;
         saveWorker(worker);
+        // Publish the final state so teammates see this worker leave right away
+        if (await hasGitRemote()) {
+            try {
+                await syncPush([sessionId]);
+            }
+            catch (err) {
+                logDebug(`final push on stop failed: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
         // Remove session
         removeSession(sessionId);
         clearCurrentSession(sessionId);
@@ -272,6 +284,7 @@ program
     try {
         ensureDirs();
         await ensureGitSetup();
+        await refreshFromRemote();
         const task = getTask(taskId);
         if (!task) {
             console.error(chalk.red(`Task not found: ${taskId}`));
@@ -349,9 +362,25 @@ program
     .action(async (opts) => {
     try {
         ensureDirs();
-        const sessionId = getCurrentSessionId();
-        const context = generateContext(sessionId, opts.format);
-        process.stdout.write(context);
+        const format = opts.format === "hook" ? "hook" : "text";
+        const hookInput = format === "hook" ? await readHookInput() : {};
+        const sessionId = getCurrentSessionId(hookInput.session_id);
+        const context = generateContext(sessionId, format);
+        if (!context)
+            return;
+        if (format === "hook") {
+            // Plain stdout from a PreToolUse hook is not shown to the model;
+            // additionalContext is.
+            process.stdout.write(JSON.stringify({
+                hookSpecificOutput: {
+                    hookEventName: "PreToolUse",
+                    additionalContext: context,
+                },
+            }));
+        }
+        else {
+            process.stdout.write(context);
+        }
     }
     catch {
         // Silently exit — cwd may not exist or no session active
@@ -367,23 +396,12 @@ program
         ensureDirs();
         let filePath = opts.file;
         // Read stdin for PostToolUse hook input
+        const hookInput = await readHookInput();
         if (!filePath) {
-            try {
-                const input = await readStdin();
-                if (input) { // Size already limited by readStdin()
-                    const parsed = JSON.parse(input);
-                    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-                        const candidate = parsed?.tool_input?.file_path ??
-                            parsed?.tool_input?.file ??
-                            parsed?.tool_input?.path;
-                        if (typeof candidate === "string") {
-                            filePath = candidate;
-                        }
-                    }
-                }
-            }
-            catch {
-                // Ignore parse errors
+            const toolInput = hookInput.tool_input;
+            const candidate = toolInput?.file_path ?? toolInput?.notebook_path ?? toolInput?.file ?? toolInput?.path;
+            if (typeof candidate === "string") {
+                filePath = candidate;
             }
         }
         if (!filePath || typeof filePath !== "string")
@@ -399,7 +417,10 @@ program
         const relative = nodePath.relative(resolvedRoot, resolvedPath);
         if (relative.startsWith("..") || nodePath.isAbsolute(relative))
             return;
-        const sessionId = getCurrentSessionId();
+        // ctxflow's own state (e.g. the context notes Claude is asked to update) is not project work
+        if (relative === ".ctxflow" || relative.startsWith(".ctxflow" + nodePath.sep))
+            return;
+        const sessionId = getCurrentSessionId(hookInput.session_id);
         if (!sessionId)
             return;
         const filename = filePath.split("/").pop() ?? filePath;
@@ -415,6 +436,21 @@ program
         // Silently exit — cwd may not exist or no session active
     }
 });
+// ctxflow on-session-start
+program
+    .command("on-session-start")
+    .description("Bind a starting Claude Code session to this terminal's ctxflow session")
+    .action(async () => {
+    try {
+        ensureDirs();
+        const hookInput = await readHookInput();
+        // Resolving records the binding for this Claude session
+        getCurrentSessionId(hookInput.session_id);
+    }
+    catch {
+        // Silently exit — cwd may not exist or no session active
+    }
+});
 // ctxflow on-session-end
 program
     .command("on-session-end")
@@ -422,7 +458,8 @@ program
     .action(async () => {
     try {
         ensureDirs();
-        const sessionId = getCurrentSessionId();
+        const hookInput = await readHookInput();
+        const sessionId = getCurrentSessionId(hookInput.session_id);
         if (!sessionId)
             return;
         const worker = getWorker(sessionId);
@@ -515,6 +552,21 @@ async function ensureGitSetup() {
         console.log(chalk.dim(`Remote configured: ${remoteUrl.trim()}`));
     }
 }
+/**
+ * Pull teammates' tasks and workers before showing or joining them. Without this a
+ * fresh clone only learns about other tasks once its own daemon has run.
+ */
+async function refreshFromRemote() {
+    try {
+        if (!(await hasGitRemote()))
+            return;
+        await ensureCtxflowBranch();
+        await syncPull(listSessions().map((s) => s.session_id));
+    }
+    catch (err) {
+        logDebug(`refresh from remote failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+}
 async function ensureIdentity() {
     let me = getMe();
     if (!me) {
@@ -570,6 +622,7 @@ async function startNewTask(me, description) {
     installHooks();
     startDaemonForSession(session.session_id);
     writeCurrentSession(session.session_id);
+    bindInvokingClaudeSession(session.session_id);
     console.log(chalk.green(`\nTask started: ${description}`));
     console.log(chalk.dim(`Task ID: ${task.id}`));
     console.log(chalk.dim(`Session: ${session.session_id}`));
@@ -599,14 +652,25 @@ async function joinExistingTask(me, taskId, taskDescription) {
     installHooks();
     startDaemonForSession(session.session_id);
     writeCurrentSession(session.session_id);
+    bindInvokingClaudeSession(session.session_id);
     console.log(chalk.green(`\nJoined task: ${taskDescription}`));
     console.log(chalk.dim(`Task ID: ${taskId}`));
     console.log(chalk.dim(`Session: ${session.session_id}`));
     console.log(chalk.dim(`Worker: ${me}\n`));
     printSessionInstructions(session.session_id);
 }
+/** When run from Claude Code's Bash tool, attach the new session to that Claude session. */
+function bindInvokingClaudeSession(sessionId) {
+    const claudeId = process.env.CLAUDE_CODE_SESSION_ID;
+    if (claudeId && /^[\w-]{1,128}$/.test(claudeId)) {
+        bindClaudeSession(claudeId, sessionId);
+    }
+}
 function printSessionInstructions(sessionId) {
     console.log(chalk.cyan("Session auto-saved. Hooks will pick it up automatically."));
+    if (!process.env.CLAUDE_CODE_SESSION_ID) {
+        console.log(chalk.dim("Start `claude` in this terminal now: each new Claude session claims the latest unclaimed ctxflow session."));
+    }
     console.log(chalk.dim(`(or set manually: export CTXFLOW_SESSION=${sessionId})\n`));
 }
 // --- Helpers ---
@@ -633,6 +697,23 @@ function promptInput(prompt) {
             resolve(answer);
         });
     });
+}
+async function readHookInput() {
+    try {
+        const input = await readStdin(); // Size already limited by readStdin()
+        if (!input)
+            return {};
+        const parsed = JSON.parse(input);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+            return {};
+        return {
+            session_id: typeof parsed.session_id === "string" ? parsed.session_id : undefined,
+            tool_input: parsed.tool_input && typeof parsed.tool_input === "object" ? parsed.tool_input : undefined,
+        };
+    }
+    catch {
+        return {};
+    }
 }
 const STDIN_MAX_BYTES = 1_048_576; // 1MB
 function readStdin() {

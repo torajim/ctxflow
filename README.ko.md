@@ -106,6 +106,8 @@ claude
 
 이미 실행 중인 Claude Code 세션 안에서 Bash 도구로 `ctxflow start`를 실행해도 됩니다. 별도 터미널이 필요 없습니다.
 
+한 프로젝트 디렉토리를 여러 터미널이 함께 써도 됩니다. 새 Claude Code 세션은 아직 다른 Claude 세션이 가져가지 않은 가장 최근의 ctxflow 세션을 자기 것으로 연결하므로, 한 터미널에서 `ctxflow start` 후 바로 `claude`를 실행한 다음 다음 터미널로 넘어가세요. 세션을 명시적으로 고정하려면 `claude` 실행 전에 `export CTXFLOW_SESSION=<session-id>`를 설정합니다.
+
 이제부터 Claude가 도구를 사용할 때마다, 팀원들이 무엇을 하고 있는지 자동으로 컨텍스트를 받습니다:
 
 ```
@@ -308,7 +310,9 @@ rm -rf /tmp/ctxflow-demo /tmp/ctxflow-demo-remote.git
 ├── workers/
 │   └── {session-id}.json          # 각 세션이 자기 파일만 수정
 ├── sessions/
-│   └── {session-id}.json          # 세션-태스크 매핑
+│   └── {session-id}.json          # 세션-태스크 매핑 (로컬 전용, 동기화 안 됨)
+├── bindings/
+│   └── {claude-session-id}        # Claude Code 세션 → ctxflow 세션 연결 (로컬 전용)
 ├── context/
 │   └── {session-id}.md            # 접근 방식 메모 (LLM이 작성)
 ├── locks/
@@ -347,7 +351,7 @@ rm -rf /tmp/ctxflow-demo /tmp/ctxflow-demo-remote.git
 | 변수 | 설명 |
 |------|------|
 | `CTXFLOW_WORKER` | 워커 이름 오버라이드 (기본값: `git config user.name`). 같은 repo에서 여러 터미널을 사용할 때 유용합니다. |
-| `CTXFLOW_SESSION` | 현재 세션 ID. `.ctxflow/current-session` 파일에서 자동 감지됩니다. 수동 오버라이드가 필요할 때만 설정합니다. |
+| `CTXFLOW_SESSION` | 현재 세션 ID. Claude Code 세션별로 자동 감지되며(`.ctxflow/bindings/`), 없으면 `.ctxflow/current-session`을 사용합니다. 수동 오버라이드가 필요할 때만 설정합니다. |
 
 ### 설정 파일
 

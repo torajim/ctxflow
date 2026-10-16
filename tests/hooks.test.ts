@@ -39,7 +39,38 @@ describe("installHooks", () => {
     const preHook = config.hooks.PreToolUse[0];
     expect(preHook.matcher).toBe("");
     expect(preHook.hooks[0].command).toBe("ctxflow context --format hook");
-    expect(preHook.hooks[0].timeout).toBe(5000);
+    expect(preHook.hooks[0].timeout).toBe(10);
+  });
+
+  it("SessionStart hook binds the Claude session", () => {
+    installHooks();
+
+    const settingsFile = path.join(tmpDir, ".claude", "settings.local.json");
+    const config = JSON.parse(fs.readFileSync(settingsFile, "utf-8"));
+
+    expect(config.hooks.SessionStart).toHaveLength(1);
+    expect(config.hooks.SessionStart[0].hooks[0].command).toBe("ctxflow on-session-start");
+  });
+
+  it("migrates millisecond timeouts written by older versions", () => {
+    const settingsDir = path.join(tmpDir, ".claude");
+    fs.mkdirSync(settingsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(settingsDir, "settings.local.json"),
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            { matcher: "", hooks: [{ type: "command", command: "ctxflow context --format hook", timeout: 5000 }] },
+          ],
+        },
+      }),
+    );
+
+    installHooks();
+
+    const config = JSON.parse(fs.readFileSync(path.join(settingsDir, "settings.local.json"), "utf-8"));
+    expect(config.hooks.PreToolUse).toHaveLength(1);
+    expect(config.hooks.PreToolUse[0].hooks[0].timeout).toBe(10);
   });
 
   it("PostToolUse hook matches Edit|Write|NotebookEdit", () => {

@@ -82,6 +82,13 @@ export function contextFile(sessionId) {
 export function sessionFile(sessionId) {
     return path.join(sessionsDir(), `${sanitizeId(sessionId)}.json`);
 }
+export function bindingsDir() {
+    return path.join(ctxflowDir(), "bindings");
+}
+/** Maps a Claude Code session ID to the ctxflow session it belongs to. */
+export function bindingFile(claudeSessionId) {
+    return path.join(bindingsDir(), sanitizeId(claudeSessionId));
+}
 export function currentSessionFile() {
     return path.join(ctxflowDir(), "current-session");
 }
@@ -92,7 +99,7 @@ export function daemonLockFile() {
     return path.join(ctxflowDir(), "daemon.lock");
 }
 export function ensureDirs() {
-    for (const dir of [ctxflowDir(), tasksDir(), workersDir(), contextDir(), sessionsDir(), lockDir()]) {
+    for (const dir of [ctxflowDir(), tasksDir(), workersDir(), contextDir(), sessionsDir(), bindingsDir(), lockDir()]) {
         fs.mkdirSync(dir, { recursive: true });
     }
 }

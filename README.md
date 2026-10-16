@@ -106,6 +106,8 @@ claude
 
 You can also run `ctxflow start` from **within** an existing Claude Code session using the Bash tool. No separate terminal needed.
 
+Several terminals can share one project directory. Each new Claude Code session claims the most recently started ctxflow session that no other Claude session has claimed yet, so run `ctxflow start` and then `claude` in the same terminal before moving to the next one. To pin a session explicitly, `export CTXFLOW_SESSION=<session-id>` before launching `claude`.
+
 From now on, every time Claude uses a tool, it automatically receives context about what your teammates are doing:
 
 ```
@@ -308,7 +310,9 @@ rm -rf /tmp/ctxflow-demo /tmp/ctxflow-demo-remote.git
 ├── workers/
 │   └── {session-id}.json          # each session owns its file only
 ├── sessions/
-│   └── {session-id}.json          # session-to-task mapping
+│   └── {session-id}.json          # session-to-task mapping (local only, not synced)
+├── bindings/
+│   └── {claude-session-id}        # Claude Code session → ctxflow session (local only)
 ├── context/
 │   └── {session-id}.md            # approach notes (written by LLM)
 ├── locks/
@@ -347,7 +351,7 @@ rm -rf /tmp/ctxflow-demo /tmp/ctxflow-demo-remote.git
 | Variable | Description |
 |----------|-------------|
 | `CTXFLOW_WORKER` | Override worker name (defaults to `git config user.name`). Useful when running multiple terminals in the same repo. |
-| `CTXFLOW_SESSION` | Current session ID. Auto-detected from `.ctxflow/current-session` file. Set manually only if you need to override. |
+| `CTXFLOW_SESSION` | Current session ID. Auto-detected per Claude Code session (see `.ctxflow/bindings/`), falling back to `.ctxflow/current-session`. Set manually only if you need to override. |
 
 ### Configuration
 

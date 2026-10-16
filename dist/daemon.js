@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { getCurrentSessionId, getSession, listWorkers, listSessions, saveWorker, updateHeartbeat, removeSession, } from "./core/task.js";
+import { getWorker, listSessions, updateHeartbeat, removeSession, } from "./core/task.js";
 import { hasGitRemote, ensureCtxflowBranch, fullSync } from "./core/sync.js";
 import { daemonPidFile, daemonLockFile } from "./core/paths.js";
 import { logDebug } from "./core/log.js";
@@ -79,24 +79,10 @@ function acquireDaemonLock() {
         catch { /* already released */ }
     };
 }
-function markInactiveWorkers() {
-    const config = loadConfig();
-    const workers = listWorkers();
-    const now = Date.now();
-    for (const worker of workers) {
-        if ((worker.status === "working" || worker.status === "idle") &&
-            now - new Date(worker.last_heartbeat).getTime() > config.inactiveThresholdMs) {
-            saveWorker({ ...worker, status: "disconnected" });
-            logDebug(`marked ${worker.name} (${worker.session_id}) as disconnected (heartbeat timeout)`);
-        }
-    }
-}
 function cleanupOrphanedSessions() {
     const sessions = listSessions();
-    const workers = listWorkers();
-    const workerSessionIds = new Set(workers.map((w) => w.session_id));
     for (const session of sessions) {
-        if (!workerSessionIds.has(session.session_id)) {
+        if (!getWorker(session.session_id)) {
             logDebug(`cleaning up orphaned session: ${session.session_id}`);
             try {
                 removeSession(session.session_id);
@@ -107,35 +93,29 @@ function cleanupOrphanedSessions() {
         }
     }
 }
+/**
+ * One daemon serves every ctxflow session started in this project directory
+ * (several terminals may share it), so heartbeat and push all local sessions.
+ */
 async function syncLoop() {
     if (syncing || shutdownRequested)
         return;
     syncing = true;
     try {
-        const sessionId = getCurrentSessionId();
-        if (!sessionId) {
-            logDebug("no CTXFLOW_SESSION env var, skipping sync");
-            return;
-        }
-        const session = getSession(sessionId);
-        if (!session) {
-            logDebug(`session ${sessionId} not found, skipping sync`);
-            return;
-        }
-        updateHeartbeat(sessionId);
-        // Stop daemon if our session was removed externally
-        const activeSessions = listSessions();
-        if (activeSessions.length === 0) {
+        cleanupOrphanedSessions();
+        const sessionIds = listSessions().map((s) => s.session_id);
+        if (sessionIds.length === 0) {
             logDebug("No active sessions remaining, daemon shutting down");
             gracefulShutdown();
             return;
         }
+        for (const id of sessionIds) {
+            updateHeartbeat(id);
+        }
         if (!(await hasGitRemote()))
             return;
         await ensureCtxflowBranch();
-        await fullSync(sessionId);
-        markInactiveWorkers();
-        cleanupOrphanedSessions();
+        await fullSync(sessionIds);
     }
     catch (err) {
         logDebug(`sync error: ${err instanceof Error ? err.message : String(err)}`);
@@ -221,8 +201,7 @@ export async function runDaemon() {
         writePid();
         process.on("SIGTERM", gracefulShutdown);
         process.on("SIGINT", gracefulShutdown);
-        const sessionId = getCurrentSessionId();
-        logDebug(`Daemon started (pid ${process.pid}, session ${sessionId ?? "none"})`);
+        logDebug(`Daemon started (pid ${process.pid})`);
         // Run once immediately — scheduleNextSync is called in the finally block
         await syncLoop();
     }

@@ -19,6 +19,9 @@ export declare function workerFile(sessionId: string): string;
 export declare function taskFile(id: string): string;
 export declare function contextFile(sessionId: string): string;
 export declare function sessionFile(sessionId: string): string;
+export declare function bindingsDir(): string;
+/** Maps a Claude Code session ID to the ctxflow session it belongs to. */
+export declare function bindingFile(claudeSessionId: string): string;
 export declare function currentSessionFile(): string;
 export declare function daemonPidFile(): string;
 export declare function daemonLockFile(): string;

@@ -19,6 +19,8 @@ import {
   sessionsDir,
   contextFile,
   currentSessionFile,
+  bindingFile,
+  bindingsDir,
   ctxflowDir,
   ensureDirs,
   getProjectRoot,
@@ -118,15 +120,92 @@ export function removeSession(sessionId: string): void {
   } catch {
     // Already removed
   }
+  removeBindingsFor(sessionId);
 }
 
-export function getCurrentSessionId(): string | null {
-  if (process.env.CTXFLOW_SESSION) return process.env.CTXFLOW_SESSION;
+function readCurrentSessionFile(): string | null {
   try {
     return fs.readFileSync(currentSessionFile(), "utf-8").trim() || null;
   } catch {
     return null;
   }
+}
+
+function isValidClaudeSessionId(id: string): boolean {
+  return /^[\w-]{1,128}$/.test(id);
+}
+
+function readBinding(claudeSessionId: string): string | null {
+  try {
+    return fs.readFileSync(bindingFile(claudeSessionId), "utf-8").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function isBoundToOtherClaudeSession(sessionId: string, claudeSessionId: string): boolean {
+  try {
+    return fs.readdirSync(bindingsDir()).some(
+      (f) => f !== claudeSessionId && readBinding(f) === sessionId,
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Bind a Claude Code session to a ctxflow session (overwrites any previous binding). */
+export function bindClaudeSession(claudeSessionId: string, sessionId: string): void {
+  safeWriteFile(bindingFile(claudeSessionId), bindingsDir(), sessionId);
+}
+
+export function removeBindingsFor(sessionId: string): void {
+  try {
+    for (const f of fs.readdirSync(bindingsDir())) {
+      if (readBinding(f) === sessionId) {
+        fs.unlinkSync(bindingFile(f));
+      }
+    }
+  } catch {
+    // Nothing bound
+  }
+}
+
+/**
+ * Resolve which ctxflow session the caller belongs to.
+ *
+ * Several terminals can share one project directory, so the project-wide
+ * current-session file alone is ambiguous. Order:
+ * 1. CTXFLOW_SESSION env var (explicit)
+ * 2. Hooks pass the Claude Code session ID: use its binding, or claim the
+ *    current-session file if no other Claude session has claimed it yet.
+ * 3. CLI commands run inside Claude's Bash tool: the binding of
+ *    CLAUDE_CODE_SESSION_ID, read-only.
+ * 4. Otherwise: the current-session file.
+ */
+export function getCurrentSessionId(claudeSessionId?: string | null): string | null {
+  if (process.env.CTXFLOW_SESSION) return process.env.CTXFLOW_SESSION;
+
+  if (!claudeSessionId || !isValidClaudeSessionId(claudeSessionId)) {
+    const envClaudeId = process.env.CLAUDE_CODE_SESSION_ID;
+    if (envClaudeId && isValidClaudeSessionId(envClaudeId)) {
+      const bound = readBinding(envClaudeId);
+      if (bound && getSession(bound)) return bound;
+    }
+    return readCurrentSessionFile();
+  }
+
+  const claudeId = claudeSessionId;
+  const bound = readBinding(claudeId);
+  if (bound) {
+    if (getSession(bound)) return bound;
+    try { fs.unlinkSync(bindingFile(claudeId)); } catch { /* ignore */ }
+  }
+
+  const current = readCurrentSessionFile();
+  if (!current || !getSession(current)) return null;
+  if (isBoundToOtherClaudeSession(current, claudeId)) return null;
+  bindClaudeSession(claudeId, current);
+  return current;
 }
 
 export function writeCurrentSession(sessionId: string): void {
@@ -227,7 +306,28 @@ export function getWorker(sessionId: string): Worker | null {
   }
 }
 
+/**
+ * A worker whose heartbeat is older than the inactivity threshold is reported as
+ * disconnected. This is computed on read instead of written back, so a machine never
+ * modifies another worker's file (which would make the shared branch conflict).
+ */
+function withEffectiveStatus(worker: Worker, thresholdMs: number, now: number): Worker {
+  if (
+    worker.status !== "disconnected" &&
+    now - new Date(worker.last_heartbeat).getTime() > thresholdMs
+  ) {
+    return { ...worker, status: "disconnected" };
+  }
+  return worker;
+}
+
 export function listWorkers(): Worker[] {
+  const thresholdMs = loadConfig().inactiveThresholdMs;
+  const now = Date.now();
+  return listStoredWorkers().map((w) => withEffectiveStatus(w, thresholdMs, now));
+}
+
+function listStoredWorkers(): Worker[] {
   try {
     const files = fs
       .readdirSync(workersDir())

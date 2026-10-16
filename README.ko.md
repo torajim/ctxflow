@@ -363,7 +363,10 @@ rm -rf /tmp/ctxflow-demo /tmp/ctxflow-demo-remote.git
   "inactiveThresholdMs": 60000,
   "maxFilesTouched": 50,
   "pushMaxRetries": 3,
-  "pushRetryBaseMs": 500
+  "pushRetryBaseMs": 500,
+  "conflictWindowMs": 7200000,
+  "heartbeatIntervalMs": 20000,
+  "maxSyncCommits": 200
 }
 ```
 
@@ -377,6 +380,10 @@ ctxflow는 `ctxflow`라는 이름의 **git orphan branch**를 동기화 채널�
 2. 각 워커는 자기 파일만 수정합니다 (`workers/{session-id}.json`, `context/{session-id}.md`)
 3. 백그라운드 데몬이 설정 가능한 간격으로 push/pull합니다 (기본 5초)
 4. 파일이 겹치지 않으므로 `git rebase`는 항상 깨끗하게 성공합니다
+5. 변화가 없으면 하트비트만 `heartbeatIntervalMs`(기본 20초)마다 커밋됩니다
+6. 브랜치 커밋이 `maxSyncCommits`(기본 200)를 넘으면 같은 내용의 커밋 하나로 압축되고, 다른 워커는 다음 동기화 때 압축된 브랜치를 자동으로 받습니다
+
+충돌 경고는 작업 중(`working`)이거나 턴 사이 대기(`idle`)인 워커가 최근 `conflictWindowMs`(기본 2시간) 안에 같은 파일을 수정했을 때 표시됩니다.
 
 즉, **N명이 동시에 동기화해도 머지 충돌이 발생하지 않습니다**.
 

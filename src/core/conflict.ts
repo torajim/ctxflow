@@ -1,12 +1,26 @@
 import type { Worker } from "./schema.js";
 import type { Conflict } from "./schema.js";
 
-export function detectConflicts(workers: Worker[]): Conflict[] {
-  const activeWorkers = workers.filter((w) => w.status === "working");
+const DEFAULT_CONFLICT_WINDOW_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * Two live workers touching the same file is a conflict.
+ *
+ * "idle" counts as live: the Stop hook marks a worker idle after every Claude
+ * turn, while its uncommitted edits are still there. Only edits within the
+ * window count, so a file touched hours ago no longer warns forever.
+ */
+export function detectConflicts(
+  workers: Worker[],
+  windowMs: number = DEFAULT_CONFLICT_WINDOW_MS,
+  now: number = Date.now(),
+): Conflict[] {
+  const liveWorkers = workers.filter((w) => w.status === "working" || w.status === "idle");
   const fileMap = new Map<string, string[]>();
 
-  for (const worker of activeWorkers) {
+  for (const worker of liveWorkers) {
     for (const file of worker.files_touched) {
+      if (now - new Date(file.updated_at).getTime() > windowMs) continue;
       const existing = fileMap.get(file.path);
       if (existing) {
         existing.push(worker.session_id);

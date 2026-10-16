@@ -32,7 +32,12 @@ export declare function getWorker(sessionId: string): Worker | null;
 export declare function listWorkers(): Worker[];
 export declare function saveWorker(worker: Worker): void;
 export declare function createWorker(name: string, machine: string, taskId: string, sessionId: string): Worker;
-export declare function updateHeartbeat(sessionId: string): void;
+/**
+ * Refresh the worker's heartbeat. With minIntervalMs, a heartbeat that is still that
+ * fresh is left alone, so an otherwise unchanged worker does not create a sync commit
+ * on every daemon tick.
+ */
+export declare function updateHeartbeat(sessionId: string, minIntervalMs?: number): void;
 export declare function addFileChange(sessionId: string, filePath: string, summary: string): void;
 export declare function getTaskParticipants(taskId: string): Worker[];
 export declare function getActiveWorkers(): Worker[];

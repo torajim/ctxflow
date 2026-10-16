@@ -109,8 +109,11 @@ async function syncLoop() {
             gracefulShutdown();
             return;
         }
+        // Keep heartbeats well inside the inactivity threshold even if only one is configured.
+        const { heartbeatIntervalMs, inactiveThresholdMs } = loadConfig();
+        const interval = Math.min(heartbeatIntervalMs, inactiveThresholdMs / 3);
         for (const id of sessionIds) {
-            updateHeartbeat(id);
+            updateHeartbeat(id, interval);
         }
         if (!(await hasGitRemote()))
             return;

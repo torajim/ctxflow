@@ -3,6 +3,7 @@ import { listWorkers, getTask } from "./task.js";
 import { detectConflicts } from "./conflict.js";
 import { contextFile } from "./paths.js";
 import type { Worker, Conflict } from "./schema.js";
+import { loadConfig } from "./config.js";
 
 function readContextFile(sessionId: string): string | null {
   try {
@@ -90,7 +91,7 @@ export function generateContext(
   if (otherWorkers.length === 0) return "";
 
   // Use session_id for conflict detection keys
-  const conflicts = detectConflicts(allWorkers);
+  const conflicts = detectConflicts(allWorkers, loadConfig().conflictWindowMs);
   const hasConflicts = conflicts.length > 0;
   const manyWorkers = otherWorkers.length >= 5;
 

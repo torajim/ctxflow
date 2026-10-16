@@ -74,12 +74,20 @@ describe("detectConflicts", () => {
     expect(detectConflicts(workers)).toEqual([]);
   });
 
-  it("ignores idle workers", () => {
+  it("counts idle workers (Stop hook marks idle after every turn)", () => {
     const workers = [
-      makeWorker("stefano", "s1", ["src/types.ts"], "working"),
+      makeWorker("stefano", "s1", ["src/types.ts"], "idle"),
       makeWorker("jimin", "s2", ["src/types.ts"], "idle"),
     ];
-    expect(detectConflicts(workers)).toEqual([]);
+    expect(detectConflicts(workers)).toEqual([{ file: "src/types.ts", workers: ["s1", "s2"] }]);
+  });
+
+  it("ignores edits older than the conflict window", () => {
+    const stale = makeWorker("jimin", "s2", ["src/types.ts"]);
+    stale.files_touched[0].updated_at = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+    const workers = [makeWorker("stefano", "s1", ["src/types.ts"]), stale];
+    expect(detectConflicts(workers, 2 * 60 * 60 * 1000)).toEqual([]);
+    expect(detectConflicts(workers, 4 * 60 * 60 * 1000)).toHaveLength(1);
   });
 
   it("returns empty for empty worker list", () => {

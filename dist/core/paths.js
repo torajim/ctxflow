@@ -52,6 +52,26 @@ export function getProjectRoot() {
         return projectRoot;
     return process.cwd();
 }
+/**
+ * Find the nearest directory at or above startDir that holds a .ctxflow directory.
+ * Hooks run in Claude's current directory, which may be a subdirectory of the project.
+ */
+export function findProjectRoot(startDir) {
+    let dir = path.resolve(startDir);
+    for (;;) {
+        try {
+            if (fs.statSync(path.join(dir, ".ctxflow")).isDirectory())
+                return dir;
+        }
+        catch {
+            // Not here; keep walking up
+        }
+        const parent = path.dirname(dir);
+        if (parent === dir)
+            return null;
+        dir = parent;
+    }
+}
 export function ctxflowDir() {
     return path.join(getProjectRoot(), ".ctxflow");
 }

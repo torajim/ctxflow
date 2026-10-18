@@ -19,6 +19,7 @@ interface HooksConfig {
     PostToolUse?: HookMatcher[];
     Stop?: HookMatcher[];
     SessionStart?: HookMatcher[];
+    UserPromptSubmit?: HookMatcher[];
     [key: string]: HookMatcher[] | undefined;
   };
   [key: string]: unknown;
@@ -41,6 +42,18 @@ const CTXFLOW_HOOKS: HooksConfig["hooks"] = {
     },
   ],
   PreToolUse: [
+    {
+      matcher: "",
+      hooks: [
+        {
+          type: "command",
+          command: "ctxflow context --format hook",
+          timeout: HOOK_TIMEOUT_SECONDS,
+        },
+      ],
+    },
+  ],
+  UserPromptSubmit: [
     {
       matcher: "",
       hooks: [

@@ -20,7 +20,7 @@
 
 같은 저장소를 두 곳에 클론하고 각자 Claude Code를 실행해서 찍은 실제 화면입니다. 서로의 코드는 pull하지 않았고, 공유하는 것은 ctxflow 동기화 브랜치뿐입니다.
 
-Stefano의 Claude가 먼저 `src/types.ts`에 `Todo { id, title, done, priority, due? }` 모델을 만들었습니다. 이어서 Jimin이 자기 Claude에게 포매터를 만들고 "필요한 Todo 타입은 알아서 정의하라"고 시켰습니다. Claude는 비슷하지만 다른 `Todo`를 하나 더 만드는 대신 Stefano의 타입을 import했습니다. 이유를 물어보면 이렇게 답합니다.
+Stefano의 Claude가 먼저 `src/types.ts`에 `Todo { id, title, done, priority, due? }` 모델을 만들었습니다. 이어서 Jimin이 자기 Claude에게 포매터를 만들고 "필요한 Todo 타입은 알아서 정의하라"고 시켰습니다. Claude는 비슷하지만 다른 `Todo`를 하나 더 만드는 대신 Stefano의 모양을 그대로 따랐습니다. `src/types.ts`에서 import하고, 그 파일이 아직 Jimin 쪽에 없으니 나중에 같은 모양의 로컬 사본을 만들면서 머지할 때는 Stefano 버전을 남기라고 메모했습니다. 직접 정의하지 않은 이유를 물어보면 이렇게 답합니다.
 
 <p align="center"><img src="docs/assets/screenshots/1-reuse-teammate-type.png" alt="Jimin의 Claude가 ctxflow를 보고 Stefano의 Todo 타입을 재사용했다고 설명하는 화면" width="820" /></p>
 
@@ -32,7 +32,7 @@ Stefano의 Claude가 먼저 `src/types.ts`에 `Todo { id, title, done, priority,
 
 <p align="center"><img src="docs/assets/screenshots/3-teammate-gets-the-news.png" alt="Jimin의 Claude가 Stefano의 필드 이름 변경을 알리고 반영하겠냐고 묻는 화면" width="820" /></p>
 
-누구도 메시지를 보내지 않았습니다. 같은 장면은 [데모 실행 가이드](#데모-실행-가이드)로 그대로 재현할 수 있습니다.
+누구도 메시지를 보내지 않았습니다. [데모 실행 가이드](#데모-실행-가이드)는 작업 폴더 하나로 이를 단순화한 버전입니다. 위 화면을 그대로 재현하려면 같은 원격에서 저장소를 두 번 클론하고, `done` 필드를 쓰는 `Todo`로 시작한 뒤 두 번째 클론이 참여한 다음에 이름을 바꾸면 됩니다.
 
 ## 특징
 

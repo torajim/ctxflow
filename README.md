@@ -20,7 +20,7 @@ When multiple developers vibe-code on the same project with LLM assistants, each
 
 Real screenshots from two separate clones of one repo, each running its own Claude Code session. Neither side has pulled the other's code. All they share is ctxflow's sync branch.
 
-Stefano's Claude has already written `src/types.ts` with a `Todo { id, title, done, priority, due? }` model. Jimin then asks their own Claude to write a formatter and to "define whatever Todo type you need". Instead of writing a second, slightly different `Todo`, it imports Stefano's. When asked why:
+Stefano's Claude has already written `src/types.ts` with a `Todo { id, title, done, priority, due? }` model. Jimin then asks their own Claude to write a formatter and to "define whatever Todo type you need". Instead of inventing a second, slightly different `Todo`, it matches Stefano's: it imports from `src/types.ts`, and since that file is not in Jimin's checkout yet, it later adds a local copy with the identical shape, noting that Stefano's version should win on merge. When asked why it didn't define its own:
 
 <p align="center"><img src="docs/assets/screenshots/1-reuse-teammate-type.png" alt="Jimin's Claude explains it reused Stefano's Todo type because ctxflow showed Stefano defining it" width="820" /></p>
 
@@ -32,7 +32,7 @@ A few seconds later, Jimin's Claude picks up the note on its next tool call:
 
 <p align="center"><img src="docs/assets/screenshots/3-teammate-gets-the-news.png" alt="Jimin's Claude reports Stefano's breaking rename and offers to apply it" width="820" /></p>
 
-Nobody sent a message. You can reproduce all of this with the [Demo Walkthrough](#demo-walkthrough).
+Nobody sent a message. The [Demo Walkthrough](#demo-walkthrough) shows a simpler version of this in a single working tree. To recreate these exact screens, clone the repo twice from one remote, start with a `Todo` that uses `done`, and rename it once the second clone has joined.
 
 ## Features
 

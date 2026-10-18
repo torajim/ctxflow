@@ -28,6 +28,18 @@ const CTXFLOW_HOOKS = {
             ],
         },
     ],
+    UserPromptSubmit: [
+        {
+            matcher: "",
+            hooks: [
+                {
+                    type: "command",
+                    command: "ctxflow context --format hook",
+                    timeout: HOOK_TIMEOUT_SECONDS,
+                },
+            ],
+        },
+    ],
     PostToolUse: [
         {
             matcher: "Edit|Write|NotebookEdit",

@@ -20,15 +20,15 @@ When multiple developers vibe-code on the same project with LLM assistants, each
 
 Real screenshots from two separate clones of one repo, each running its own Claude Code session. Neither side has pulled the other's code. All they share is ctxflow's sync branch.
 
-Stefano's Claude has already written `src/types.ts` with a `Todo { id, title, done, priority, due? }` model. Jimin then asks their own Claude to write a formatter and to "define whatever Todo type you need". Instead of inventing a second, slightly different `Todo`, it matches Stefano's: it imports from `src/types.ts`, and since that file is not in Jimin's checkout yet, it later adds a local copy with the identical shape, noting that Stefano's version should win on merge. When asked why it didn't define its own:
+Stefano's Claude has already written `src/types.ts` with a `Todo { id, title, done, priority, due? }` model. Jimin then asks their own Claude to write a formatter and to "define whatever Todo type you need". Instead of inventing a second, slightly different `Todo`, it copies Stefano's exact shape, since `src/types.ts` is not in Jimin's checkout yet, and notes that it should switch to Stefano's import after the merge:
 
-<p align="center"><img src="docs/assets/screenshots/1-reuse-teammate-type.png" alt="Jimin's Claude explains it reused Stefano's Todo type because ctxflow showed Stefano defining it" width="820" /></p>
+<p align="center"><img src="docs/assets/screenshots/1-reuse-teammate-type.png" alt="Jimin's Claude explains it matched Stefano's Todo shape because ctxflow showed Stefano building it in src/types.ts" width="820" /></p>
 
 Later Stefano asks Claude to rename `done` to `completed`. It makes the change, and it also knows that this breaks code on Jimin's machine that it has never seen:
 
 <p align="center"><img src="docs/assets/screenshots/2-breaking-change-warning.png" alt="Stefano's Claude warns that renaming done to completed will break jimin's formatter" width="820" /></p>
 
-A few seconds later, Jimin's Claude picks up the note on its next tool call:
+A few seconds later, Jimin asks a quick question. Claude answers without running a single tool, and it already knows about the rename:
 
 <p align="center"><img src="docs/assets/screenshots/3-teammate-gets-the-news.png" alt="Jimin's Claude reports Stefano's breaking rename and offers to apply it" width="820" /></p>
 
@@ -58,7 +58,7 @@ Nobody sent a message. The [Demo Walkthrough](#demo-walkthrough) shows a simpler
 └─────────────┘                          └─────────────┘
 ```
 
-Each worker's LLM gets a `<system-reminder>` injected before every tool use, containing the other workers' status, recent file changes, and approach notes.
+Each worker's LLM gets a `<system-reminder>` injected with every prompt and before every tool use, containing the other workers' status, recent file changes, and approach notes.
 
 ## Getting Started
 
@@ -260,14 +260,14 @@ Create a Todo formatter in TypeScript:
 
 ### What you'll see
 
-These messages are injected into **Claude's context** via hooks — Claude (the LLM) sees them automatically before every tool use, but they are **not displayed in the terminal**. To verify:
+These messages are injected into **Claude's context** via hooks — Claude (the LLM) sees them automatically with every prompt and before every tool use, but they are **not displayed in the terminal**. To verify:
 
 - **Preview what's being injected:** run `ctxflow debug-hooks` in any terminal
 - **Confirm Claude received it:** ask Claude "Do you see any ctxflow collaboration context?"
 
 <p align="center"><img src="docs/assets/screenshots/4-injected-context.png" alt="ctxflow debug-hooks output showing jimin's approach notes, recent files, and a conflict warning on src/types.ts" width="820" /></p>
 
-To see exactly what your Claude is being told, run `ctxflow debug-hooks`. Above is Stefano's view after Jimin also created `src/types.ts`: Jimin's approach notes, recent files, and the overlap warning.
+To see exactly what your Claude is being told, run `ctxflow debug-hooks`. Above is Stefano's view after Jimin also created a placeholder `src/types.ts`: Jimin's approach notes, recent files, and the overlap warning.
 
 **Context sharing** — When Worker B's Claude uses any tool, it receives:
 

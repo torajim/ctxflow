@@ -9,6 +9,11 @@ export declare function assertPathInside(filePath: string, parentDir: string): v
 export declare function safeWriteFile(filePath: string, parentDir: string, data: string): void;
 export declare function setProjectRoot(root: string): void;
 export declare function getProjectRoot(): string;
+/**
+ * Find the nearest directory at or above startDir that holds a .ctxflow directory.
+ * Hooks run in Claude's current directory, which may be a subdirectory of the project.
+ */
+export declare function findProjectRoot(startDir: string): string | null;
 export declare function ctxflowDir(): string;
 export declare function tasksDir(): string;
 export declare function workersDir(): string;

@@ -42,6 +42,16 @@ describe("installHooks", () => {
     expect(preHook.hooks[0].timeout).toBe(10);
   });
 
+  it("UserPromptSubmit hook injects context before Claude answers", () => {
+    installHooks();
+
+    const settingsFile = path.join(tmpDir, ".claude", "settings.local.json");
+    const config = JSON.parse(fs.readFileSync(settingsFile, "utf-8"));
+
+    expect(config.hooks.UserPromptSubmit).toHaveLength(1);
+    expect(config.hooks.UserPromptSubmit[0].hooks[0].command).toBe("ctxflow context --format hook");
+  });
+
   it("SessionStart hook binds the Claude session", () => {
     installHooks();
 

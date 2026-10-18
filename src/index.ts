@@ -39,6 +39,8 @@ import {
   daemonPidFile,
   contextFile,
   getProjectRoot,
+  findProjectRoot,
+  setProjectRoot,
 } from "./core/paths.js";
 import { installHooks, ensureGitignore } from "./hooks.js";
 
@@ -429,7 +431,7 @@ program
   .option("--format <format>", "Output format (hook|text)", "text")
   .action(async (opts: { format: string }) => {
     try {
-      ensureDirs();
+      if (!useExistingProjectRoot()) return;
       const format = opts.format === "hook" ? "hook" : "text";
       const hookInput = format === "hook" ? await readHookInput() : {};
       const sessionId = getCurrentSessionId(hookInput.session_id);
@@ -437,11 +439,13 @@ program
       if (!context) return;
       if (format === "hook") {
         // Plain stdout from a PreToolUse hook is not shown to the model;
-        // additionalContext is.
+        // additionalContext is. The same command also serves UserPromptSubmit,
+        // so turns where Claude answers without a tool still see fresh context.
         process.stdout.write(
           JSON.stringify({
             hookSpecificOutput: {
-              hookEventName: "PreToolUse",
+              hookEventName:
+                hookInput.hook_event_name === "UserPromptSubmit" ? "UserPromptSubmit" : "PreToolUse",
               additionalContext: context,
             },
           }),
@@ -461,7 +465,7 @@ program
   .option("--file <filepath>", "Edited file path")
   .action(async (opts: { file?: string }) => {
     try {
-    ensureDirs();
+    if (!useExistingProjectRoot()) return;
 
     let filePath = opts.file;
 
@@ -513,7 +517,7 @@ program
   .description("Bind a starting Claude Code session to this terminal's ctxflow session")
   .action(async () => {
     try {
-      ensureDirs();
+      if (!useExistingProjectRoot()) return;
       const hookInput = await readHookInput();
       // Resolving records the binding for this Claude session
       getCurrentSessionId(hookInput.session_id);
@@ -528,7 +532,7 @@ program
   .description("Handle session end")
   .action(async () => {
     try {
-      ensureDirs();
+      if (!useExistingProjectRoot()) return;
       const hookInput = await readHookInput();
       const sessionId = getCurrentSessionId(hookInput.session_id);
       if (!sessionId) return;
@@ -796,7 +800,26 @@ function promptInput(prompt: string): Promise<string> {
   });
 }
 
+/**
+ * Point ctxflow at the project whose .ctxflow this hook belongs to. Claude Code runs
+ * hooks in its current directory, which moves when Claude cd's into a subdirectory,
+ * so prefer CLAUDE_PROJECT_DIR and otherwise walk up from the cwd. Returns false when
+ * no ctxflow project is found, so hooks never create a stray .ctxflow.
+ */
+function useExistingProjectRoot(): boolean {
+  for (const start of [process.env.CLAUDE_PROJECT_DIR, process.cwd()]) {
+    if (!start) continue;
+    const root = findProjectRoot(start);
+    if (root) {
+      setProjectRoot(root);
+      return true;
+    }
+  }
+  return false;
+}
+
 interface HookInput {
+  hook_event_name?: string;
   session_id?: string;
   tool_input?: Record<string, unknown> & {
     file_path?: unknown;
@@ -813,6 +836,7 @@ async function readHookInput(): Promise<HookInput> {
     const parsed = JSON.parse(input);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
     return {
+      hook_event_name: typeof parsed.hook_event_name === "string" ? parsed.hook_event_name : undefined,
       session_id: typeof parsed.session_id === "string" ? parsed.session_id : undefined,
       tool_input:
         parsed.tool_input && typeof parsed.tool_input === "object" ? parsed.tool_input : undefined,

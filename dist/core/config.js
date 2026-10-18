@@ -8,6 +8,9 @@ const DEFAULT_CONFIG = {
     maxLogSize: 1_048_576,
     pushMaxRetries: 3,
     pushRetryBaseMs: 500,
+    conflictWindowMs: 2 * 60 * 60 * 1000,
+    heartbeatIntervalMs: 20_000,
+    maxSyncCommits: 200,
 };
 let cachedConfig = null;
 let cachedConfigMtime = 0;
@@ -20,6 +23,9 @@ function validateConfig(raw) {
         "maxLogSize",
         "pushMaxRetries",
         "pushRetryBaseMs",
+        "conflictWindowMs",
+        "heartbeatIntervalMs",
+        "maxSyncCommits",
     ];
     for (const key of numericKeys) {
         if (key in raw) {

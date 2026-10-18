@@ -9,6 +9,12 @@ export interface CtxflowConfig {
   maxLogSize: number;
   pushMaxRetries: number;
   pushRetryBaseMs: number;
+  /** Only edits newer than this count toward file conflicts. */
+  conflictWindowMs: number;
+  /** How often a worker's heartbeat is refreshed (and therefore committed). */
+  heartbeatIntervalMs: number;
+  /** Squash the shared ctxflow branch to one commit once it grows past this. */
+  maxSyncCommits: number;
 }
 
 const DEFAULT_CONFIG: CtxflowConfig = {
@@ -18,6 +24,9 @@ const DEFAULT_CONFIG: CtxflowConfig = {
   maxLogSize: 1_048_576,
   pushMaxRetries: 3,
   pushRetryBaseMs: 500,
+  conflictWindowMs: 2 * 60 * 60 * 1000,
+  heartbeatIntervalMs: 20_000,
+  maxSyncCommits: 200,
 };
 
 let cachedConfig: CtxflowConfig | null = null;
@@ -32,6 +41,9 @@ function validateConfig(raw: Record<string, unknown>): Partial<CtxflowConfig> {
     "maxLogSize",
     "pushMaxRetries",
     "pushRetryBaseMs",
+    "conflictWindowMs",
+    "heartbeatIntervalMs",
+    "maxSyncCommits",
   ];
   for (const key of numericKeys) {
     if (key in raw) {

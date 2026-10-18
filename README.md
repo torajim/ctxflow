@@ -363,7 +363,10 @@ Create an optional `ctxflow.config.json` in your project root to override defaul
   "inactiveThresholdMs": 60000,
   "maxFilesTouched": 50,
   "pushMaxRetries": 3,
-  "pushRetryBaseMs": 500
+  "pushRetryBaseMs": 500,
+  "conflictWindowMs": 7200000,
+  "heartbeatIntervalMs": 20000,
+  "maxSyncCommits": 200
 }
 ```
 
@@ -377,6 +380,10 @@ ctxflow uses a **git orphan branch** named `ctxflow` as its sync channel:
 2. Each worker writes only to their own files (`workers/{session-id}.json`, `context/{session-id}.md`)
 3. A background daemon pushes/pulls at a configurable interval (default 5s)
 4. Since files never overlap, `git rebase` always succeeds cleanly
+5. When nothing else changes, only the heartbeat is committed, every `heartbeatIntervalMs` (default 20s)
+6. Once the branch passes `maxSyncCommits` commits (default 200), it is squashed into a single commit with the same files; other workers adopt the compacted branch on their next sync
+
+A conflict warning appears when workers who are `working` or `idle` (between turns) edited the same file within the last `conflictWindowMs` (default 2 hours).
 
 This means **N workers can sync simultaneously with zero merge conflicts**.
 

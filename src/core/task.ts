@@ -378,10 +378,16 @@ export function createWorker(
   return worker;
 }
 
-export function updateHeartbeat(sessionId: string): void {
+/**
+ * Refresh the worker's heartbeat. With minIntervalMs, a heartbeat that is still that
+ * fresh is left alone, so an otherwise unchanged worker does not create a sync commit
+ * on every daemon tick.
+ */
+export function updateHeartbeat(sessionId: string, minIntervalMs = 0): void {
   withLock(`worker-${sessionId}`, () => {
     const worker = getWorker(sessionId);
     if (!worker) return;
+    if (Date.now() - new Date(worker.last_heartbeat).getTime() < minIntervalMs) return;
     worker.last_heartbeat = new Date().toISOString();
     saveWorker(worker);
   });

@@ -18,6 +18,7 @@ import {
 } from "../../src/core/task.js";
 import { fullSync, ensureCtxflowBranch } from "../../src/core/sync.js";
 import { generateContext } from "../../src/core/context.js";
+import { resetConfigCache } from "../../src/core/config.js";
 
 let root: string;
 let remote: string;
@@ -32,6 +33,10 @@ function makeClone(name: string): string {
   git(dir, "init", "-q");
   git(dir, "remote", "add", "origin", remote);
   return dir;
+}
+
+function remoteCommitCount(): number {
+  return parseInt(git(root, "--git-dir", remote, "rev-list", "--count", "ctxflow").trim(), 10);
 }
 
 function startWorker(project: string, name: string, taskId?: string): { sessionId: string; taskId: string } {
@@ -141,5 +146,53 @@ describe("ctxflow branch sync", () => {
       .filter(Boolean);
     expect(files.some((f) => f.startsWith("sessions/"))).toBe(false);
     expect(files).toContain(`workers/${sessionId}.json`);
+  });
+
+  it("compacts the shared branch once it passes maxSyncCommits", async () => {
+    const a = makeClone("a");
+    fs.writeFileSync(path.join(a, "ctxflow.config.json"), JSON.stringify({ maxSyncCommits: 3 }));
+    resetConfigCache();
+    const { sessionId } = startWorker(a, "stefano");
+    for (let i = 0; i < 4; i++) {
+      addFileChange(sessionId, `f${i}.ts`, "+x");
+      await fullSync([sessionId]);
+    }
+
+    expect(remoteCommitCount()).toBeLessThanOrEqual(3);
+    const files = git(root, "--git-dir", remote, "ls-tree", "-r", "--name-only", "ctxflow");
+    expect(files).toContain(`workers/${sessionId}.json`);
+    expect(getWorker(sessionId)?.files_touched.map((f) => f.path)).toEqual(["f0.ts", "f1.ts", "f2.ts", "f3.ts"]);
+    resetConfigCache();
+  });
+
+  it("a teammate adopts compacted history without losing its own state", async () => {
+    const a = makeClone("a");
+    const b = makeClone("b");
+    const stefano = startWorker(a, "stefano");
+    await fullSync([stefano.sessionId]);
+    const jimin = startWorker(b, "jimin", stefano.taskId);
+    await fullSync([jimin.sessionId]);
+
+    // a compacts the branch
+    setProjectRoot(a);
+    fs.writeFileSync(path.join(a, "ctxflow.config.json"), JSON.stringify({ maxSyncCommits: 1 }));
+    resetConfigCache();
+    addFileChange(stefano.sessionId, "a.ts", "+a");
+    await fullSync([stefano.sessionId]);
+    expect(remoteCommitCount()).toBe(1);
+    fs.rmSync(path.join(a, "ctxflow.config.json"));
+    resetConfigCache();
+
+    // b has local, unpushed state built on the old history
+    setProjectRoot(b);
+    addFileChange(jimin.sessionId, "b.ts", "+b");
+    const newTask = createTask("jimin's second task", "jimin");
+    await fullSync([jimin.sessionId]);
+
+    expect(getWorker(jimin.sessionId)?.files_touched.map((f) => f.path)).toContain("b.ts");
+    expect(getWorker(stefano.sessionId)?.files_touched.map((f) => f.path)).toContain("a.ts");
+    const remoteFiles = git(root, "--git-dir", remote, "ls-tree", "-r", "--name-only", "ctxflow");
+    expect(remoteFiles).toContain(`tasks/${newTask.id}.json`);
+    expect(remoteFiles).toContain(`workers/${jimin.sessionId}.json`);
   });
 });

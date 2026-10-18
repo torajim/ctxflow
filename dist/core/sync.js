@@ -160,12 +160,7 @@ function sleep(ms) {
 function ownedFiles(sessionIds) {
     return sessionIds.flatMap((id) => [`workers/${id}.json`, `context/${id}.md`]);
 }
-export async function syncPush(sessionIds) {
-    const config = loadConfig();
-    const maxRetries = config.pushMaxRetries;
-    const baseMs = config.pushRetryBaseMs;
-    await ensureCtxflowBranch();
-    const git = syncGit();
+async function commitLocalState(git, sessionIds) {
     const filesToStage = ownedFiles(sessionIds);
     const tasksPath = path.join(ctxflowDir(), "tasks");
     if (fs.existsSync(tasksPath)) {
@@ -181,15 +176,26 @@ export async function syncPush(sessionIds) {
     if (status.staged.length > 0) {
         await git.commit(`sync: ${sessionIds.join(",")} @ ${new Date().toISOString()}`);
     }
+}
+export async function syncPush(sessionIds) {
+    const config = loadConfig();
+    const maxRetries = config.pushMaxRetries;
+    const baseMs = config.pushRetryBaseMs;
+    await ensureCtxflowBranch();
+    const git = syncGit();
+    await commitLocalState(git, sessionIds);
     if (!(await hasSyncRemote()))
         return;
     // Teammates push every few seconds too; integrate first so the push usually fast-forwards.
     await integrateRemote(git, sessionIds);
+    // A reset during integration puts local state back as uncommitted files.
+    await commitLocalState(git, sessionIds);
     if (!(await hasLocalCommits(git)))
         return;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
             await git.push("origin", `HEAD:refs/heads/${BRANCH}`);
+            await compactHistoryIfNeeded(git, config.maxSyncCommits);
             return;
         }
         catch (err) {
@@ -199,6 +205,7 @@ export async function syncPush(sessionIds) {
                 const delay = baseMs * Math.pow(2, attempt) + Math.random() * baseMs;
                 await sleep(delay);
                 await integrateRemote(git, sessionIds);
+                await commitLocalState(git, sessionIds);
             }
         }
     }
@@ -223,28 +230,97 @@ async function integrateRemote(git, sessionIds) {
         await adoptRemoteHistory(git);
         return;
     }
-    try {
-        await git.rebase(["--autostash", `origin/${BRANCH}`]);
-        return;
-    }
-    catch (rebaseErr) {
-        logDebug(`rebase failed, resetting to remote and keeping owned files: ${rebaseErr instanceof Error ? rebaseErr.message : String(rebaseErr)}`);
-        await git.rebase(["--abort"]).catch(() => undefined);
-    }
-    const saved = new Map();
-    for (const f of ownedFiles(sessionIds)) {
+    // The remote history may have been compacted by a teammate; then there is nothing
+    // to rebase onto and the remote state is taken directly.
+    if (await sharesHistoryWithRemote(git)) {
         try {
-            saved.set(f, fs.readFileSync(path.join(ctxflowDir(), f), "utf-8"));
+            await git.rebase(["--autostash", `origin/${BRANCH}`]);
+            return;
+        }
+        catch (rebaseErr) {
+            logDebug(`rebase failed, resetting to remote and keeping owned files: ${rebaseErr instanceof Error ? rebaseErr.message : String(rebaseErr)}`);
+            await git.rebase(["--abort"]).catch(() => undefined);
+        }
+    }
+    else {
+        logDebug("remote history was compacted, adopting it");
+    }
+    await resetToRemoteKeepingLocal(git, sessionIds);
+}
+async function sharesHistoryWithRemote(git) {
+    try {
+        // No common ancestor exits 1 with empty output, which simple-git does not always treat as an error.
+        return (await git.raw(["merge-base", "HEAD", `origin/${BRANCH}`])).trim().length > 0;
+    }
+    catch {
+        return false;
+    }
+}
+/**
+ * Take the remote state wholesale, then put back what only this machine can know:
+ * its own worker/context files, and tasks the remote does not have yet.
+ */
+async function resetToRemoteKeepingLocal(git, sessionIds) {
+    const read = (f) => {
+        try {
+            return fs.readFileSync(path.join(ctxflowDir(), f), "utf-8");
         }
         catch {
-            // Not created yet
+            return null;
+        }
+    };
+    const owned = new Map();
+    for (const f of ownedFiles(sessionIds)) {
+        const content = read(f);
+        if (content !== null)
+            owned.set(f, content);
+    }
+    const localTasks = new Map();
+    const tasksPath = path.join(ctxflowDir(), "tasks");
+    if (fs.existsSync(tasksPath)) {
+        for (const name of fs.readdirSync(tasksPath).filter((n) => n.endsWith(".json"))) {
+            const content = read(`tasks/${name}`);
+            if (content !== null)
+                localTasks.set(`tasks/${name}`, content);
         }
     }
     await git.raw(["reset", "--hard", `origin/${BRANCH}`]);
-    for (const [f, content] of saved) {
+    const write = (f, content) => {
         const full = path.join(ctxflowDir(), f);
         fs.mkdirSync(path.dirname(full), { recursive: true });
         fs.writeFileSync(full, content);
+    };
+    for (const [f, content] of owned)
+        write(f, content);
+    for (const [f, content] of localTasks) {
+        if (!fs.existsSync(path.join(ctxflowDir(), f)))
+            write(f, content);
+    }
+}
+/**
+ * Every sync is a commit, so the shared branch grows without bound. Once it passes
+ * the limit, replace it with a single commit holding the same files. The lease makes
+ * this a no-op if a teammate pushed in between; teammates adopt the compacted branch
+ * on their next sync (see integrateRemote).
+ */
+async function compactHistoryIfNeeded(git, maxCommits) {
+    const count = parseInt((await git.raw(["rev-list", "--count", "HEAD"])).trim(), 10);
+    if (!(count > maxCommits))
+        return;
+    const pushed = (await git.revparse(["HEAD"])).trim();
+    const compacted = (await git.raw(["commit-tree", "HEAD^{tree}", "-m", `ctxflow: compact ${count} sync commits`])).trim();
+    try {
+        await git.push([
+            "origin",
+            `${compacted}:refs/heads/${BRANCH}`,
+            `--force-with-lease=refs/heads/${BRANCH}:${pushed}`,
+        ]);
+        await git.raw(["reset", "--soft", compacted]);
+        await git.fetch("origin", BRANCH);
+        logDebug(`compacted ${count} sync commits into ${compacted.slice(0, 8)}`);
+    }
+    catch (err) {
+        logDebug(`history compaction skipped: ${err instanceof Error ? err.message : String(err)}`);
     }
 }
 export async function syncPull(sessionIds = []) {

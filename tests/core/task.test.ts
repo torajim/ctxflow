@@ -189,6 +189,18 @@ describe("updateHeartbeat", () => {
     expect(heartbeatTime).toBeLessThanOrEqual(after);
   });
 
+  it("leaves a heartbeat fresher than minIntervalMs untouched", () => {
+    const worker = createWorker("stefano", "mac", "t1", "sess-hb2");
+    const recent = new Date(Date.now() - 5_000).toISOString();
+    saveWorker({ ...worker, last_heartbeat: recent });
+
+    updateHeartbeat("sess-hb2", 20_000);
+    expect(getWorker("sess-hb2")!.last_heartbeat).toBe(recent);
+
+    updateHeartbeat("sess-hb2", 1_000);
+    expect(getWorker("sess-hb2")!.last_heartbeat).not.toBe(recent);
+  });
+
   it("does nothing for non-existent worker", () => {
     updateHeartbeat("ghost");
   });

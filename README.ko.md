@@ -16,6 +16,24 @@
 
 **ctxflow**는 git orphan branch를 통해 모든 작업자의 컨텍스트를 실시간 동기화하여 이 문제를 해결합니다. 모든 LLM 어시스턴트가 자동으로 다른 사람이 무엇을 하고 있는지, 어떤 결정을 내렸는지, 어디서 충돌 가능성이 있는지를 파악합니다.
 
+## 실제 동작 화면
+
+같은 저장소를 두 곳에 클론하고 각자 Claude Code를 실행해서 찍은 실제 화면입니다. 서로의 코드는 pull하지 않았고, 공유하는 것은 ctxflow 동기화 브랜치뿐입니다.
+
+Stefano의 Claude가 먼저 `src/types.ts`에 `Todo { id, title, done, priority, due? }` 모델을 만들었습니다. 이어서 Jimin이 자기 Claude에게 포매터를 만들고 "필요한 Todo 타입은 알아서 정의하라"고 시켰습니다. Claude는 비슷하지만 다른 `Todo`를 하나 더 만드는 대신 Stefano의 모양을 그대로 따랐습니다. `src/types.ts`에서 import하고, 그 파일이 아직 Jimin 쪽에 없으니 나중에 같은 모양의 로컬 사본을 만들면서 머지할 때는 Stefano 버전을 남기라고 메모했습니다. 직접 정의하지 않은 이유를 물어보면 이렇게 답합니다.
+
+<p align="center"><img src="docs/assets/screenshots/1-reuse-teammate-type.png" alt="Jimin의 Claude가 ctxflow를 보고 Stefano의 Todo 타입을 재사용했다고 설명하는 화면" width="820" /></p>
+
+이후 Stefano가 자기 Claude에게 `done`을 `completed`로 바꾸라고 합니다. Claude는 변경을 마친 뒤, 한 번도 본 적 없는 Jimin 쪽 코드가 이 변경으로 깨진다는 사실까지 짚어 줍니다.
+
+<p align="center"><img src="docs/assets/screenshots/2-breaking-change-warning.png" alt="Stefano의 Claude가 done을 completed로 바꾸면 jimin의 포매터가 깨진다고 경고하는 화면" width="820" /></p>
+
+몇 초 뒤 Jimin 쪽 Claude는 다음 도구 호출 때 이 메모를 받아 봅니다.
+
+<p align="center"><img src="docs/assets/screenshots/3-teammate-gets-the-news.png" alt="Jimin의 Claude가 Stefano의 필드 이름 변경을 알리고 반영하겠냐고 묻는 화면" width="820" /></p>
+
+누구도 메시지를 보내지 않았습니다. [데모 실행 가이드](#데모-실행-가이드)는 작업 폴더 하나로 이를 단순화한 버전입니다. 위 화면을 그대로 재현하려면 같은 원격에서 저장소를 두 번 클론하고, `done` 필드를 쓰는 `Todo`로 시작한 뒤 두 번째 클론이 참여한 다음에 이름을 바꾸면 됩니다.
+
 ## 특징
 
 - **인터랙티브 CLI.** `ctxflow`로 활성 작업 확인, 참여 또는 새로 생성 — 한 번에 처리.
@@ -246,6 +264,10 @@ Todo 포맷터를 TypeScript로 만들어줘:
 
 - **주입될 내용 미리보기:** 아무 터미널에서 `ctxflow debug-hooks` 실행
 - **Claude가 받았는지 확인:** Claude에게 "ctxflow collaboration context가 보이니?" 라고 질문
+
+<p align="center"><img src="docs/assets/screenshots/4-injected-context.png" alt="ctxflow debug-hooks 출력: jimin의 접근 방식 메모, 최근 파일, src/types.ts 충돌 경고" width="820" /></p>
+
+Claude에게 실제로 무엇이 주입되는지는 `ctxflow debug-hooks`로 볼 수 있습니다. 위 화면은 Jimin도 `src/types.ts`를 만든 뒤 Stefano 쪽에서 본 내용으로, Jimin의 접근 방식 메모와 최근 파일, 겹침 경고가 함께 보입니다.
 
 **컨텍스트 공유** — Worker B의 Claude가 도구를 사용할 때 자동으로 받는 내용:
 

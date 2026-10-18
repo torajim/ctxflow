@@ -24,7 +24,7 @@ Stefano's Claude has already written `src/types.ts` with a `Todo { id, title, do
 
 <p align="center"><img src="docs/assets/screenshots/1-reuse-teammate-type.png" alt="Jimin's Claude explains it reused Stefano's Todo type because ctxflow showed Stefano defining it" width="820" /></p>
 
-Later Stefano asks his Claude to rename `done` to `completed`. It makes the change, and it also knows that this breaks code on Jimin's machine that it has never seen:
+Later Stefano asks Claude to rename `done` to `completed`. It makes the change, and it also knows that this breaks code on Jimin's machine that it has never seen:
 
 <p align="center"><img src="docs/assets/screenshots/2-breaking-change-warning.png" alt="Stefano's Claude warns that renaming done to completed will break jimin's formatter" width="820" /></p>
 
